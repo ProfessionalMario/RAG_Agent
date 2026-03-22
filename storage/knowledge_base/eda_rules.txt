@@ -1,0 +1,9 @@
+If missing > 40% → drop column
+
+If missing between 10% and 40% → impute
+
+If numeric and skewed → use median
+
+If categorical with low cardinality → use mode
+
+If high cardinality categorical → avoid one-hot encoding
