@@ -1,0 +1,58 @@
+├── README.md
+├── Todo.md
+├── cli.py
+├── core
+│   ├── __init__.py
+│   ├── config.py
+│   ├── exceptions.py
+│   ├── logger.py
+│   └── tracking.py
+├── data
+│   └── pdfs
+│       ├── Introduction to statistical learning.pdf
+│       ├── Python_Datascience.pdf
+│       └── think stats.pdf
+├── models
+├── rag
+│   ├── __init__.py
+│   ├── critic.py
+│   ├── knowledge.py
+│   ├── parser.py
+│   ├── pipeline.py
+│   ├── query.py
+│   ├── reasoning.py
+│   ├── retriever.py
+│   └── router.py
+├── reports.txt
+├── requirements.txt
+├── storage
+│   ├── knowledge_base
+│   │   ├── eda_chunks.json
+│   │   └── eda_rules.txt
+│   ├── logs
+│   │   └── app.log
+│   └── project_structure.json
+├── tests
+│   ├── conftest.py
+│   ├── evaluation
+│   │   ├── evaluator.py
+│   │   ├── test_cases.json
+│   │   └── test_e2e.py
+│   ├── integration
+│   │   ├── test_cli.py
+│   │   └── test_pipeline.py
+│   └── unit
+│       ├── test_critic.py
+│       ├── test_parser.py
+│       ├── test_query.py
+│       ├── test_reasoning.py
+│       └── test_retriever.py
+├── total_context
+│   ├── docstring_extractor.py
+│   ├── docstrings.txt
+│   ├── project_doc.json
+│   ├── project_summary.py
+│   ├── project_tree.txt
+│   └── structure_extractor.py
+└── ui
+    └── app.py

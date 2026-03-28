@@ -1,0 +1,26 @@
+[
+  {
+    "column": "Age",
+    "missing_percent": 20,
+    "dtype": "numeric",
+    "expected": "imputation"
+  },
+  {
+    "column": "Cabin",
+    "missing_percent": 77,
+    "dtype": "categorical",
+    "expected": "drop"
+  },
+  {
+    "column": "Embarked",
+    "missing_percent": 0,
+    "dtype": "categorical",
+    "expected": "no action"
+  },
+  {
+    "column": "Salary",
+    "missing_percent": 15,
+    "dtype": "numeric",
+    "expected": "imputation"
+  }
+]
