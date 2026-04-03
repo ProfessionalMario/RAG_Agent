@@ -1,0 +1,29 @@
+Dataset Analysis: Student Performance
+================================
+Rows: 395
+Columns: 33
+
+Data Quality
+----------------
+Total Missing Values: 0
+Duplicate Rows: 0
+
+Top Correlations
+----------------
+G3 ↔ G2: 0.802
+G3 ↔ G1: 0.731
+StudyTime ↔ Failures: -0.315
+
+Missing by Column
+----------------
+None
+
+Column Types
+----------------
+Numeric     : age, Medu, Fedu, traveltime, studytime, failures, G1, G2, G3
+Categorical : sex, address, famsize, Pstatus, Mjob, Fjob, reason, guardian, schoolsup, famsup, paid, activities, nursery, higher, internet, romantic
+
+Data Warnings
+----------------
+- Some numeric columns may need normalization
+- StudyTime and Failures have moderate negative correlation

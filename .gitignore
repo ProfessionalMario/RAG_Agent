@@ -37,6 +37,7 @@ models/
 # 📦 Vector DB / Embeddings
 # -----------------------------
 storage/vector_db/
+storage/knowledge_base
 *.faiss
 *.pkl
 
@@ -46,11 +47,6 @@ storage/vector_db/
 storage/logs/
 *.log
 
-# -----------------------------
-# 🧪 Experiments
-# -----------------------------
-experiements/runs/
-experiements/configs/
 
 # -----------------------------
 # 📂 OS / Editor junk
@@ -80,7 +76,7 @@ Thumbs.db
 # 🧾 Reports (optional)
 # -----------------------------
 # If reports are dynamic:
-reports.txt
+# reports.txt
 
 # -----------------------------
 # 🔥 Testing cache

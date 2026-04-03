@@ -70,6 +70,8 @@ import os
 from core.exceptions import ParserError
 from rag.knowledge import load_chunks
 from rag.retriever import get_retriever
+from core.config import ENGINE
+from rag.gemini_client import call_gemini
 
 docs = load_chunks()
 logger = get_logger(__name__)
@@ -195,10 +197,14 @@ def run_pipeline(report_path: str):
                 prompt = build_prompt(column_data, retrieved_docs)
 
                 # 5. LLM
-                decision_raw = call_llm_with_fallback(column_data, retriever)
+                if ENGINE == "gemini":
+                    raw_output = call_gemini(column_data, report_text)
+                else:
+                    raw_output = call_llm_with_fallback(...)
+
 
                 if not decision_raw or not decision_raw.strip():
-                    logger.warning(f"[LLM] Empty response for {col_name}")
+                    logger.warning(f"[GEMINI] Empty response for {col_name}")
                     decision_raw = "Decision: Unable to determine\nReason: Empty LLM output"
 
                 # 6. Parse
