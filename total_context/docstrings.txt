@@ -1,3 +1,7 @@
+  Function: cli_notify (Doc: yes)
+  Function: display_results (Doc: yes)
+  Function: run_pipeline_cli (Doc: yes)
+  Function: run_query_cli (Doc: yes)
 Module: ..\core\exceptions.py
   Module Docstring: Exceptions – Developer Guide
 
@@ -274,6 +278,7 @@ results = run_pipeline("reports.txt")
 for r in results:
     print(f"{r['column']}: {r['decision']}")
 
+  Function: process_column (Doc: yes)
 Module: ..\rag\query.py
   Module Docstring: Query Builder – Developer Guide
 
@@ -362,51 +367,12 @@ print(decision)
 #  Reason: Numeric column with moderate missing values and likely skewed distribution"
 
   Function: build_prompt (Doc: yes)
-  Function: call_llm (Doc: yes)
+  Function: call_llm_with_fallback (Doc: yes)
+  Function: parse_llm_output (Doc: yes)
 Module: ..\rag\retriever.py
-  Module Docstring: FAISS Retriever Module – Developer Guide
+  Module Docstring: FAISS Retriever 
 
-Provides semantic retrieval of text documents using embeddings and FAISS.
-
---------------------------------------------------------------------------------
-Purpose:
---------------------------------------------------------------------------------
-- Encode knowledge base documents into embeddings
-- Build a FAISS index for efficient similarity search
-- Retrieve top-k relevant documents for a query
-- Singleton model loader ensures embeddings model is loaded only once
-
---------------------------------------------------------------------------------
-Core Components:
---------------------------------------------------------------------------------
-get_model(model_path: str) -> SentenceTransformer
-    - Loads or returns a cached SentenceTransformer model
-    - Input: model path
-    - Output: embedding model instance
-
-FaissRetriever(model_path: str, documents: List[str])
-    - Initializes the retriever:
-        • Encodes documents
-        • Builds FAISS index
-    - Logs progress and errors
-
-retrieve(query: str, k: int = 3) -> List[str]
-    - Retrieves top-k documents for a query
-    - Input: query string, k (number of results)
-    - Output: list of relevant documents
-    - Returns fallback if retrieval fails
-
---------------------------------------------------------------------------------
-Usage Example:
---------------------------------------------------------------------------------
-from rag.retriever import FaissRetriever
-
-retriever = FaissRetriever("./models/minilm", docs)
-results = retriever.retrieve("numeric column with missing values", k=3)
-
-print(results)
-# ["Use median for skewed numeric data", "Drop column if missing > 60%", ...]
-
+  Function: rebuild_index (Doc: yes)
 Module: ..\rag\router.py
   Module Docstring: Query Router Module – Developer Guide
 

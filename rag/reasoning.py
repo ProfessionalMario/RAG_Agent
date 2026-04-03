@@ -57,7 +57,7 @@ logger = get_logger(__name__)
 
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "gemma3:1b"  # or "gemma:2b" depending on your setup
+MODEL_NAME = "gemma3:4b"  # or "gemma:2b" depending on your setup
 
 
 def build_prompt(column_data: Dict, retrieved_docs: List[str]) -> str:
@@ -136,3 +136,38 @@ def call_llm_with_fallback(column_data: Dict, retriever, model_name: str = MODEL
     except Exception as e:
         logger.warning(f"Ollama call failed: {e}. Using FAISS retrieval fallback.")
         return "\n".join(retrieved_docs) or "No relevant knowledge found."
+    
+
+def parse_llm_output(output: str) -> Dict:
+    """
+    Convert LLM text output into structured dict.
+
+    Expected format:
+    Decision: <...>
+    Reason: <...>
+    """
+
+    decision = ""
+    reason = ""
+
+    try:
+        lines = output.split("\n")
+        for line in lines:
+            if "Decision:" in line:
+                decision = line.split("Decision:")[-1].strip()
+            elif "Reason:" in line:
+                reason = line.split("Reason:")[-1].strip()
+
+        if not decision:
+            decision = "keep"
+        if not reason:
+            reason = "Fallback: No clear reasoning from model"
+
+    except Exception:
+        decision = "keep"
+        reason = "Parsing failed, safe fallback applied"
+
+    return {
+        "decision": decision.lower().replace(" ", "_"),
+        "reason": reason
+    }

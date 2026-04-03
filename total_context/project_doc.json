@@ -72,12 +72,13 @@
     "module_docstring": "EDA Report Parser – Developer Guide\n\nThis module converts structured EDA reports into machine-readable\ncolumn-level data (list of dictionaries).\n\n--------------------------------------------------------------------------------\nCallable Functions:\n--------------------------------------------------------------------------------\n\nparse_report(report_text: str) -> List[Dict]\n    - Parses structured EDA text into a list of column dictionaries.\n    - Output fields per column: column name, missing count, missing percent, dtype.\n    - Raises ParserError on empty/malformed reports.\n\nextract_rows(text: str) -> int\n    - Extracts total number of rows from report text.\n\nextract_missing_by_column(text: str) -> Dict[str, int]\n    - Extracts missing counts per column.\n    - Returns empty dict if section missing.\n\nextract_column_types(text: str) -> Tuple[List[str], List[str]]\n    - Returns numeric and categorical columns.\n\nresolve_dtype(column: str, numeric_cols: List[str], categorical_cols: List[str]) -> str\n    - Returns column datatype: \"numeric\", \"categorical\", or \"unknown\".\n\ncompute_missing_percent(missing_count: int, total_rows: int) -> float\n    - Computes missing percentage safely.\n\n--------------------------------------------------------------------------------\nUsage Notes:\n--------------------------------------------------------------------------------\nfrom parser import parse_report\n\nreport_text = open(\"eda_report.txt\").read()\nparsed_columns = parse_report(report_text)\n\nfor col in parsed_columns:\n    print(f\"{col['column']}: {col['missing_percent']}% missing\")",
     "classes": {},
     "functions": {
-      "parse_report": "Parse structured EDA report into column-level data\n\nOutput:\n[\n    {\n        \"column\": \"Age\",\n        \"missing_count\": 177,\n        \"missing_percent\": 19.8,\n        \"dtype\": \"numeric\"\n    },\n    ...\n]",
+      "parse_report": "Parse dataset report into column metadata.\n\nReturns:\n    List[dict] with:\n    - column\n    - dtype\n    - missing_percent",
       "extract_rows": "",
       "extract_missing_by_column": "Extract missing values per column",
       "extract_column_types": "Extract numeric and categorical columns",
       "resolve_dtype": "Resolve datatype for a column",
-      "compute_missing_percent": "Compute missing percentage safely"
+      "compute_missing_percent": "Compute missing percentage safely",
+      "normalize_decision": ""
     }
   },
   "rag\\pipeline.py": {
@@ -87,6 +88,7 @@
       "load_text_file": "",
       "apply_guardrails": "",
       "load_report": "",
+      "process_column": "Decide whether a column needs LLM processing",
       "run_pipeline": "",
       "load_knowledge_by_route": "",
       "run_query": "",
@@ -105,22 +107,32 @@
     "classes": {},
     "functions": {
       "build_prompt": "Build constrained prompt for reasoning",
-      "call_llm": "Call Ollama (Gemma) for reasoning"
+      "call_llm_with_fallback": "Call Ollama LLM with FAISS retrieval fallback.\nIf Ollama fails or returns empty, fallback to FAISS retrieval.",
+      "parse_llm_output": "Convert LLM text output into structured dict.\n\nExpected format:\nDecision: <...>\nReason: <...>"
     }
   },
   "rag\\retriever.py": {
-    "module_docstring": "FAISS Retriever Module – Developer Guide\n\nProvides semantic retrieval of text documents using embeddings and FAISS.\n\n--------------------------------------------------------------------------------\nPurpose:\n--------------------------------------------------------------------------------\n- Encode knowledge base documents into embeddings\n- Build a FAISS index for efficient similarity search\n- Retrieve top-k relevant documents for a query\n- Singleton model loader ensures embeddings model is loaded only once\n\n--------------------------------------------------------------------------------\nCore Components:\n--------------------------------------------------------------------------------\nget_model(model_path: str) -> SentenceTransformer\n    - Loads or returns a cached SentenceTransformer model\n    - Input: model path\n    - Output: embedding model instance\n\nFaissRetriever(model_path: str, documents: List[str])\n    - Initializes the retriever:\n        • Encodes documents\n        • Builds FAISS index\n    - Logs progress and errors\n\nretrieve(query: str, k: int = 3) -> List[str]\n    - Retrieves top-k documents for a query\n    - Input: query string, k (number of results)\n    - Output: list of relevant documents\n    - Returns fallback if retrieval fails\n\n--------------------------------------------------------------------------------\nUsage Example:\n--------------------------------------------------------------------------------\nfrom rag.retriever import FaissRetriever\n\nretriever = FaissRetriever(\"./models/minilm\", docs)\nresults = retriever.retrieve(\"numeric column with missing values\", k=3)\n\nprint(results)\n# [\"Use median for skewed numeric data\", \"Drop column if missing > 60%\", ...]",
+    "module_docstring": "FAISS Retriever ",
     "classes": {
       "FaissRetriever": {
         "docstring": "",
         "methods": {
           "__init__": "",
-          "retrieve": ""
+          "_build": "",
+          "_save": "",
+          "_load": "",
+          "retrieve": "",
+          "rebuild_index": "Rebuild the FAISS index from scratch with new or updated documents."
         }
       }
     },
     "functions": {
-      "get_model": ""
+      "get_model": "",
+      "normalize_doc": "",
+      "clean_text": "",
+      "chunk_text": "",
+      "is_valid": "",
+      "get_retriever": ""
     }
   },
   "rag\\router.py": {
@@ -134,7 +146,7 @@
     "module_docstring": "Docstring Extractor\n-------------------\nExtracts all human-readable module, class, and function docstrings from a Python project.\n\nUsage:\n    python -m total_context.docstring_extractor <project_path>\n\nExample:\n    python -m total_context.docstring_extractor X:\\RAG_Agent\\RAG_Agent\n\nFeatures:\n- Ignores irrelevant folders/files (configurable)\n- Skips __init__.py unless it has a docstring\n- Prints summary to terminal\n- Saves output in docstrings.txt in the script folder",
     "classes": {},
     "functions": {
-      "extract_docstrings": "Extract module, class, and function docstrings from a single Python file.",
+      "extract_docstrings": "",
       "extract_project_docstrings": "",
       "main": ""
     }

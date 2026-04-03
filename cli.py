@@ -1,4 +1,4 @@
-# cli/app.py
+
 
 from rag.pipeline import safe_run_pipeline, run_query
 from core.logger import get_logger

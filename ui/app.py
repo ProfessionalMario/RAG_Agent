@@ -11,11 +11,14 @@ st.title("EDA Decision Agent")
 
 import streamlit as st
 
-st.title("EDA Decision Agent")
 
-if st.button("Run Analysis"):
-    results = run_pipeline("reports.txt")
+report = st.text_area("Paste Report")
 
-    for r in results:
-        st.subheader(r["column"])
-        st.text(r["decision"])
+# if st.button("Run"):
+#     response = call_llm(PROMPT)
+#     st.subheader("Raw Output")
+#     st.code(response)
+
+#     parsed = extract_json(response)
+#     st.subheader("Parsed JSON")
+#     st.json(parsed)

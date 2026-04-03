@@ -1,0 +1,106 @@
+{
+  "structure": {
+    "root": "RAG_Agent",
+    "structure": [
+      {
+        "folder": "",
+        "files": [
+          "cli.py",
+          "tes.py"
+        ]
+      },
+      {
+        "folder": "core",
+        "files": [
+          "config.py",
+          "exceptions.py",
+          "logger.py",
+          "tracking.py",
+          "__init__.py"
+        ]
+      },
+      {
+        "folder": "data",
+        "files": []
+      },
+      {
+        "folder": "data\\pdfs",
+        "files": []
+      },
+      {
+        "folder": "rag",
+        "files": [
+          "critic.py",
+          "knowledge.py",
+          "parser.py",
+          "pipeline.py",
+          "query.py",
+          "reasoning.py",
+          "retriever.py",
+          "router.py",
+          "__init__.py"
+        ]
+      },
+      {
+        "folder": "storage",
+        "files": []
+      },
+      {
+        "folder": "storage\\faiss",
+        "files": []
+      },
+      {
+        "folder": "storage\\knowledge_base",
+        "files": []
+      },
+      {
+        "folder": "storage\\logs",
+        "files": []
+      },
+      {
+        "folder": "tests",
+        "files": [
+          "conftest.py"
+        ]
+      },
+      {
+        "folder": "tests\\evaluation",
+        "files": [
+          "evaluator.py",
+          "test_e2e.py"
+        ]
+      },
+      {
+        "folder": "tests\\integration",
+        "files": [
+          "test_cli.py",
+          "test_pipeline.py"
+        ]
+      },
+      {
+        "folder": "tests\\unit",
+        "files": [
+          "test_critic.py",
+          "test_parser.py",
+          "test_query.py",
+          "test_reasoning.py",
+          "test_retriever.py"
+        ]
+      },
+      {
+        "folder": "total_context",
+        "files": [
+          "docstring_extractor.py",
+          "project_summary.py",
+          "structure_extractor.py"
+        ]
+      },
+      {
+        "folder": "ui",
+        "files": [
+          "app.py"
+        ]
+      }
+    ]
+  }
+}

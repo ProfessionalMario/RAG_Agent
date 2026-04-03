@@ -1,0 +1,572 @@
+{
+  "tree": {
+    "root": "RAG_Agent",
+    "structure": [
+      {
+        "folder": "",
+        "files": [
+          "cli.py",
+          "tes.py"
+        ]
+      },
+      {
+        "folder": "core",
+        "files": [
+          "config.py",
+          "exceptions.py",
+          "logger.py",
+          "tracking.py",
+          "__init__.py"
+        ]
+      },
+      {
+        "folder": "data",
+        "files": []
+      },
+      {
+        "folder": "data\\pdfs",
+        "files": []
+      },
+      {
+        "folder": "rag",
+        "files": [
+          "critic.py",
+          "knowledge.py",
+          "parser.py",
+          "pipeline.py",
+          "query.py",
+          "reasoning.py",
+          "retriever.py",
+          "router.py",
+          "__init__.py"
+        ]
+      },
+      {
+        "folder": "storage",
+        "files": []
+      },
+      {
+        "folder": "storage\\faiss",
+        "files": []
+      },
+      {
+        "folder": "storage\\knowledge_base",
+        "files": []
+      },
+      {
+        "folder": "storage\\logs",
+        "files": []
+      },
+      {
+        "folder": "tests",
+        "files": [
+          "conftest.py"
+        ]
+      },
+      {
+        "folder": "tests\\evaluation",
+        "files": [
+          "evaluator.py",
+          "test_e2e.py"
+        ]
+      },
+      {
+        "folder": "tests\\integration",
+        "files": [
+          "test_cli.py",
+          "test_pipeline.py"
+        ]
+      },
+      {
+        "folder": "tests\\unit",
+        "files": [
+          "test_critic.py",
+          "test_parser.py",
+          "test_query.py",
+          "test_reasoning.py",
+          "test_retriever.py"
+        ]
+      },
+      {
+        "folder": "total_context",
+        "files": [
+          "docstring_extractor.py",
+          "project_summary.py",
+          "structure_extractor.py"
+        ]
+      },
+      {
+        "folder": "ui",
+        "files": [
+          "app.py"
+        ]
+      }
+    ]
+  },
+  "files": [
+    {
+      "file": "cli.py",
+      "docstring": "",
+      "summary": {
+        "summary": "This file generates JSON objects based on a predefined structure, utilizing function summaries to describe the purpose of various components within a data processing pipeline.",
+        "description": "It leverages a list of function summaries to create a concise overview of the system's functionality. The primary goal is to produce structured JSON output, facilitating data analysis and reporting.  The generated JSON objects are designed for clarity and ease of use in downstream applications."
+      },
+      "functions": [
+        {
+          "name": "cli_notify",
+          "summary": "Prints a notification message to the terminal."
+        },
+        {
+          "name": "spinner",
+          "summary": "Generates a JSON object with a summary and description."
+        },
+        {
+          "name": "display_results",
+          "summary": "Displays the final results in a structured JSON format."
+        },
+        {
+          "name": "run_pipeline_cli",
+          "summary": "Executes the EDA pipeline for a streamlined user experience."
+        },
+        {
+          "name": "run_query_cli",
+          "summary": "Runs a live query."
+        },
+        {
+          "name": "main",
+          "summary": "Generates JSON objects according to specified rules."
+        }
+      ],
+      "classes": []
+    },
+    {
+      "file": "core\\exceptions.py",
+      "docstring": "Exceptions \u2013 Developer Guide\nCustom errors for clear failure handling in the system.\nClasses:\nBaseAppException(message: str, code: str = \"APP_ERROR\")\n- Base class for all custom exceptions.\n- Use code to categorize errors.\nParserError\n- Raised when parsing fails.\nRetrievalError\n- Raised when retrieval fails.\nAgentError\n- Raised when the decision agent fails.\nValidationError\n- Raised for invalid input.",
+      "summary": {
+        "summary": "Defines custom exceptions for improved error handling within the system.",
+        "description": "This file establishes a base exception class, `BaseAppException`, to provide a standardized approach for handling errors. It introduces specific exception types like `ParserError`, `RetrievalError`, `AgentError`, and `ValidationError` to represent different failure scenarios. These exceptions allow for more granular and informative error reporting, facilitating better debugging and recovery mechanisms."
+      },
+      "functions": [],
+      "classes": [
+        {
+          "name": "BaseAppException",
+          "docstring": "Base exception for all custom errors",
+          "methods": [
+            "__init__"
+          ]
+        },
+        {
+          "name": "ParserError",
+          "docstring": "Raised when parsing fails",
+          "methods": []
+        },
+        {
+          "name": "RetrievalError",
+          "docstring": "Raised when retrieval fails",
+          "methods": []
+        },
+        {
+          "name": "AgentError",
+          "docstring": "Raised when decision agent fails",
+          "methods": []
+        },
+        {
+          "name": "ValidationError",
+          "docstring": "Raised for invalid input",
+          "methods": []
+        }
+      ]
+    },
+    {
+      "file": "core\\logger.py",
+      "docstring": "Logger \u2013 Developer Guide\nProvides a unified logging system writing to both file and console.\nCallable Functions:\nget_logger(name: str) -> logging.Logger\n- Creates or retrieves a logger by name.\n- Logs to console and storage/logs/app.log.\n- Prevents duplicate handlers.\n- Usage: logger = get_logger(\"module_name\"); logger.info(\"Message\")",
+      "summary": {
+        "summary": "This file provides a centralized logging system that writes to both the console and a log file.",
+        "description": "It offers a unified logging interface for applications, simplifying log management. The system ensures that logs are consistently captured and stored, facilitating debugging and monitoring.  It prevents duplicate handlers, ensuring efficient logging operations."
+      },
+      "functions": [
+        {
+          "name": "get_logger",
+          "summary": "Returns a logger object."
+        }
+      ],
+      "classes": []
+    },
+    {
+      "file": "core\\tracking.py",
+      "docstring": "Tracking \u2013 Developer Guide\nUtilities for ML experiment tracking using MLflow.\nCallable Functions:\ninit_mlflow()\n- Sets the MLflow tracking URI to local `./mlruns`.\nstart_run(run_name: str)\n- Starts an MLflow run with a given name.\nlog_params(params: dict)\n- Logs parameters to the active MLflow run.\nlog_metrics(metrics: dict)\n- Logs metrics to the active MLflow run.\nend_run()\n- Ends the current MLflow run.",
+      "summary": {
+        "summary": "Provides utilities for managing MLflow experiment tracking, enabling the recording of parameters, metrics, and run metadata.",
+        "description": "This package simplifies the process of tracking machine learning experiments using MLflow. It offers functions for initializing the MLflow environment, starting and ending MLflow runs, and logging parameters and metrics associated with each run.  The core functionality supports the systematic documentation and comparison of different model training runs."
+      },
+      "functions": [
+        {
+          "name": "init_mlflow",
+          "summary": "Initializes MLflow environment."
+        },
+        {
+          "name": "start_run",
+          "summary": "Generates a JSON object based on provided rules."
+        },
+        {
+          "name": "log_params",
+          "summary": "This function generates a JSON object with a summary and description."
+        },
+        {
+          "name": "log_metrics",
+          "summary": "Logs key metrics for the system."
+        },
+        {
+          "name": "end_run",
+          "summary": "Generates JSON output based on provided rules."
+        }
+      ],
+      "classes": []
+    },
+    {
+      "file": "rag\\critic.py",
+      "docstring": "LLM Decision Reviewer \u2013 Developer Guide\nModule that validates and refines preprocessing decisions using a local LLM.\nCallable Functions:\nreview_decision(column_data: dict, retrieved_docs: List[str], decision: str) -> str\n- Reviews an LLM-generated preprocessing decision.\n- Inputs:\ncolumn_data : dict\ne.g., {\"column\": \"Age\", \"dtype\": \"numeric\", \"missing_percent\": 20}\nretrieved_docs : List[str]\nContext retrieved from knowledge base.\ndecision : str\nInitial decision from LLM generator.\n- Returns:\nstr : Final safe decision.\n- Behavior:\n- Accepts high-confidence outputs.\n- Rejects low/medium confidence outputs.\n- Falls back to safe default if needed.\nSafety Notes:\n- Only uses retrieved knowledge.\n- Confidence filtering ensures reliable outputs.\n- Invalid or low-confidence responses automatically use a safe fallback.",
+      "summary": {
+        "summary": "This file describes the LLM Decision Reviewer module, which validates and refines preprocessing decisions using a local LLM. It reviews LLM-generated decisions based on confidence and safety, utilizing retrieved knowledge and falling back to safe defaults when necessary.",
+        "description": "The module provides a mechanism to ensure the reliability of preprocessing choices made by an LLM. It leverages a local LLM to assess the validity of these decisions, considering both confidence levels and safety constraints.  The core functionality centers around reviewing individual decisions, filtering based on confidence, and defaulting to safe options when uncertainty or potential risks are detected.  This approach aims to minimize errors and maintain data integrity."
+      },
+      "functions": [
+        {
+          "name": "review_decision",
+          "summary": "Refines LLM decisions based on confidence and safety."
+        }
+      ],
+      "classes": []
+    },
+    {
+      "file": "rag\\knowledge.py",
+      "docstring": "Knowledge Base Loader \u2013 Developer Guide\nThis module provides utilities to manage and preprocess PDFs/TXT into\nknowledge chunks for embedding, retrieval, or analysis.\nCallable Functions:\nhas_knowledge() -> bool\n- Checks if knowledge chunks exist.\n- Output: True/False\nload_chunks() -> List[str]\n- Loads saved knowledge chunks from storage.\n- Output: List of chunks (empty if not found or error).\nget_latest_pdf_timestamp() -> float\n- Returns the most recent modification time of PDFs in the data folder.\n- Output: Timestamp as float.\nensure_knowledge_ready()\n- Checks if knowledge chunks are missing or outdated.\n- Rebuilds chunks if needed.\nrebuild_knowledge()\n- Recreates knowledge chunks from all PDFs.\n- Calls `load_all_pdfs` and `save_chunks`.\nsave_chunks(chunks: List[str])\n- Saves a list of text chunks to storage.\n- Input: chunks\n- Output: Written JSON file.\nload_all_pdfs(folder_path: str) -> List[str]\n- Loads and splits all PDFs in a folder into chunks.\n- Input: folder path\n- Output: List of text chunks\nload_txt(path: str) -> List[str]\n- Loads a TXT file as lines, ignoring empties.\n- Input: path\n- Output: List of non-empty stripped lines\nload_pdf(path: str) -> List[str]\n- Loads a PDF file and splits pages into chunks.\n- Input: path\n- Output: List of text chunks\nsplit_text(text: str, chunk_size: int = 300) -> List[str]\n- Splits a long string into word-based chunks.\n- Input: text, optional chunk size\n- Output: List of text chunks\nUsage Notes:\nfrom knowledge import load_chunks, ensure_knowledge_ready\nensure_knowledge_ready()\nchunks = load_chunks()\nprint(f\"Loaded {len(chunks)} chunks\")",
+      "summary": {
+        "summary": "This module facilitates the loading, management, and rebuilding of knowledge chunks derived from PDF and TXT files, intended for embedding, retrieval, or analysis.",
+        "description": "It provides functions to check for existing knowledge, load saved chunks, determine the latest PDF modification time, ensure knowledge is up-to-date by rebuilding chunks if necessary, and manage the overall process of extracting and storing knowledge from various text sources.  The module handles loading PDFs, splitting them into text chunks, and loading TXT files as lists of lines.  It also includes utilities for splitting text into smaller segments based on a specified chunk size."
+      },
+      "functions": [
+        {
+          "name": "has_knowledge",
+          "summary": "Checks if the system has knowledge about a topic."
+        },
+        {
+          "name": "load_chunks",
+          "summary": "Loads internal knowledge chunks."
+        },
+        {
+          "name": "get_latest_pdf_timestamp",
+          "summary": "Retrieves the latest PDF timestamp."
+        },
+        {
+          "name": "ensure_knowledge_ready",
+          "summary": "Prepares knowledge for processing."
+        },
+        {
+          "name": "rebuild_knowledge",
+          "summary": "This function generates a JSON object with a summary and description."
+        },
+        {
+          "name": "save_chunks",
+          "summary": "Generates a JSON object with a summary and description."
+        },
+        {
+          "name": "load_all_pdfs",
+          "summary": "Loads and chunks all PDFs within a specified folder."
+        },
+        {
+          "name": "load_txt",
+          "summary": "This function loads text from a specified path."
+        },
+        {
+          "name": "load_pdf",
+          "summary": "Loads the text content from a PDF file."
+        },
+        {
+          "name": "split_text",
+          "summary": "Splits a given text into smaller chunks of a specified size."
+        }
+      ],
+      "classes": []
+    },
+    {
+      "file": "rag\\parser.py",
+      "docstring": "EDA Report Parser \u2013 Developer Guide\nThis module converts structured EDA reports into machine-readable\ncolumn-level data (list of dictionaries).\nCallable Functions:\nparse_report(report_text: str) -> List[Dict]\n- Parses structured EDA text into a list of column dictionaries.\n- Output fields per column: column name, missing count, missing percent, dtype.\n- Raises ParserError on empty/malformed reports.\nextract_rows(text: str) -> int\n- Extracts total number of rows from report text.\nextract_missing_by_column(text: str) -> Dict[str, int]\n- Extracts missing counts per column.\n- Returns empty dict if section missing.\nextract_column_types(text: str) -> Tuple[List[str], List[str]]\n- Returns numeric and categorical columns.\nresolve_dtype(column: str, numeric_cols: List[str], categorical_cols: List[str]) -> str\n- Returns column datatype: \"numeric\", \"categorical\", or \"unknown\".\ncompute_missing_percent(missing_count: int, total_rows: int) -> float\n- Computes missing percentage safely.\nUsage Notes:\nfrom parser import parse_report\nreport_text = open(\"eda_report.txt\").read()\nparsed_columns = parse_report(report_text)\nfor col in parsed_columns:\nprint(f\"{col['column']}: {col['missing_percent']}% missing\")",
+      "summary": {
+        "summary": "This module parses EDA reports to generate structured column-level data, including missing values and data types, suitable for machine learning applications.",
+        "description": "It converts unstructured EDA report text into a list of dictionaries, where each dictionary represents a column and contains information about its name, missing count, missing percentage, and data type. The module provides functions for extracting row counts, identifying missing values per column, determining column types (numeric and categorical), and calculating missing percentages. It is designed to facilitate data analysis and preprocessing for machine learning tasks by providing a machine-readable representation of EDA findings."
+      },
+      "functions": [
+        {
+          "name": "parse_report",
+          "summary": "Parses dataset reports to extract column metadata including data type and missing percentage."
+        },
+        {
+          "name": "extract_rows",
+          "summary": "This function extracts the number of rows from a given text."
+        },
+        {
+          "name": "extract_missing_by_column",
+          "summary": "Identifies missing values in a DataFrame based on specified columns."
+        },
+        {
+          "name": "extract_column_types",
+          "summary": "Extracts column types from a list of column names."
+        },
+        {
+          "name": "resolve_dtype",
+          "summary": "This function determines the data type of a column."
+        },
+        {
+          "name": "compute_missing_percent",
+          "summary": "Calculates the percentage of missing values in a dataset."
+        },
+        {
+          "name": "normalize_decision",
+          "summary": "Normalizes a decision string."
+        }
+      ],
+      "classes": []
+    },
+    {
+      "file": "rag\\pipeline.py",
+      "docstring": "RAG Preprocessing Pipeline \u2013 Developer Guide\nThis module runs a full preprocessing pipeline using EDA reports, LLMs,\nknowledge retrieval, and a critic module to produce safe column-level decisions.\nPipeline Flow:\n1. Load report text file\n2. Parse report \u2192 column metadata\n3. Load knowledge base documents\n4. Initialize FAISS retriever\n5. For each column:\n- Apply guardrails (skip/no-action/drop)\n- Build retrieval query\n- Retrieve knowledge\n- Build LLM prompt\n- Call LLM \u2192 initial decision\n- Validate/refine decision with critic\n- Fallback to LLM output if critic empty\n6. Aggregate results per column\nKey Functions:\nrun_pipeline(report_path: str) -> List[Dict]\n- Main pipeline execution\n- Returns list of dicts: column, query, decision (or error info)\nsafe_run_pipeline(report_path: str) -> List[Dict]\n- Wrapper for run_pipeline with exception handling\n- Returns structured error info if pipeline fails\nload_text_file(path: str) -> str\n- Reads text file content\napply_guardrails(column_data: dict) -> Optional[str]\n- Checks missing % to skip or drop columns\n- Returns guardrail decision string or None\nload_knowledge_by_route(route: str) -> List[str]\n- Loads knowledge base documents by route\n- TXT and PDF support\nrun_query(query: str) -> str\n- Routes query, retrieves docs, calls LLM\n- Returns text answer\nUsage Notes:\nfrom rag.pipeline import run_pipeline\nresults = run_pipeline(\"reports.txt\")\nfor r in results:\nprint(f\"{r['column']}: {r['decision']}\")",
+      "summary": {
+        "summary": "parse_failed",
+        "description": "```json\n{\n  \"summary\": \"This module implements a RAG preprocessing pipeline designed to analyze reports and generate column-level decisions using a combination of EDA reports, LLMs, knowledge retrieva"
+      },
+      "functions": [
+        {
+          "name": "load_text_file",
+          "summary": "Loads the content of a text file."
+        },
+        {
+          "name": "apply_guardrails",
+          "summary": "Generates a JSON object based on provided column data."
+        },
+        {
+          "name": "load_report",
+          "summary": "Generates a JSON object based on provided rules."
+        },
+        {
+          "name": "process_column",
+          "summary": "Determines if a column requires LLM processing based on its name."
+        },
+        {
+          "name": "run_pipeline",
+          "summary": "Generates a JSON object based on provided arguments."
+        },
+        {
+          "name": "load_knowledge_by_route",
+          "summary": "Loads knowledge based on a provided route."
+        },
+        {
+          "name": "run_query",
+          "summary": "Generates JSON objects based on provided rules."
+        },
+        {
+          "name": "safe_run_pipeline",
+          "summary": "Executes a data pipeline for report generation."
+        }
+      ],
+      "classes": []
+    },
+    {
+      "file": "rag\\query.py",
+      "docstring": "Query Builder \u2013 Developer Guide\nConverts structured column metadata into human-readable queries for retrieval.\nPurpose:\n- Input: column-level EDA dict (name, dtype, missing %)\n- Output: short descriptive query\n- Focuses on:\n- data type (numeric / categorical)\n- missing value percentage\n- Fallback: generic query if any failure occurs\nCallable Functions:\nbuild_query(column_data: dict) -> str\n- Converts column metadata to a retrieval query\n- Returns string like:\n\"numeric column with 20 percent missing values\"\n- On failure, returns:\n\"data preprocessing best practices\"\nUsage Example:\nfrom rag.query import build_query\nquery = build_query({\n\"column\": \"Age\",\n\"missing_percent\": 19.8,\n\"dtype\": \"numeric\"\n})\nprint(query)  # \"numeric column with 20 percent missing values\"",
+      "summary": {
+        "summary": "Generates a human-readable query for data retrieval based on column metadata, focusing on data type and missing value percentage.",
+        "description": "This file provides a function, `build_query`, that transforms structured column data (including name, data type, and missing value percentage) into a concise, descriptive query string. The query highlights the column's data type (numeric or categorical) and the proportion of missing values.  It serves as a utility for constructing retrieval queries efficiently.  In case of processing failures, a generic fallback query is returned."
+      },
+      "functions": [
+        {
+          "name": "build_query",
+          "summary": "Generates a JSON query based on provided column data."
+        }
+      ],
+      "classes": []
+    },
+    {
+      "file": "rag\\reasoning.py",
+      "docstring": "LLM Reasoning Module \u2013 Developer Guide\nGenerates preprocessing decisions using a local LLM (Ollama + RAG).\nPurpose:\n- Build structured prompts from column metadata and retrieved docs\n- Send prompt to local LLM via Ollama API\n- Return concise, structured decision\n- Fallback: log errors and return message if LLM fails\nFlow:\nColumn Data + Retrieved Docs\n\u2193\nbuild_prompt()\n\u2193\ncall_llm()\n\u2193\nDecision + Reason\nCallable Functions:\nbuild_prompt(column_data: dict, retrieved_docs: list) -> str\n- Creates a structured LLM prompt from input data\n- Ensures rules, format, and safe fallback\ncall_llm(prompt: str) -> str\n- Sends prompt to Ollama LLM\n- Returns LLM-generated decision + reason\n- Handles errors and logs failures\nUsage Example:\nfrom rag.reasoning import build_prompt, call_llm\nprompt = build_prompt(column_data, retrieved_docs)\ndecision = call_llm(prompt)\nprint(decision)\n# \"Decision: Use median imputation\n#  Reason: Numeric column with moderate missing values and likely skewed distribution\"",
+      "summary": {
+        "summary": "This module leverages a local LLM (Ollama) within a Retrieval-Augmented Generation (RAG) pipeline to generate preprocessing decisions for data columns. It combines column metadata with retrieved documents to construct prompts, which are then sent to the LLM for a concise, structured response.",
+        "description": "The core functionality involves building prompts that incorporate relevant column data and retrieved information. These prompts are submitted to a local Ollama LLM, resulting in a decision and a supporting reason.  Error handling is implemented to gracefully manage LLM failures, logging errors and returning a fallback message. The module is designed to streamline data preprocessing by automating the identification of appropriate strategies based on LLM analysis."
+      },
+      "functions": [
+        {
+          "name": "build_prompt",
+          "summary": "Generate a concise summary of the provided column data and retrieved documents, highlighting key insights and relationships."
+        },
+        {
+          "name": "call_llm_with_fallback",
+          "summary": "Calls an Ollama LLM with a FAISS retrieval fallback mechanism."
+        },
+        {
+          "name": "parse_llm_output",
+          "summary": "Parses LLM output to extract decision and reasoning."
+        }
+      ],
+      "classes": []
+    },
+    {
+      "file": "rag\\retriever.py",
+      "docstring": "FAISS Retriever",
+      "summary": {
+        "summary": "This file implements a FAISS Retriever, designed for efficient similarity search within a collection of documents.",
+        "description": "It provides functions for document normalization, text cleaning, and chunking, preparing text data for indexing within a FAISS index. The core functionality revolves around retrieving relevant documents based on similarity queries."
+      },
+      "functions": [
+        {
+          "name": "get_model",
+          "summary": "Generates a JSON object with a summary and description."
+        },
+        {
+          "name": "normalize_doc",
+          "summary": "This function normalizes a document."
+        },
+        {
+          "name": "clean_text",
+          "summary": "This function cleans text."
+        },
+        {
+          "name": "chunk_text",
+          "summary": "Splits a given text into smaller chunks with a specified size and overlap."
+        },
+        {
+          "name": "is_valid",
+          "summary": "This function generates a JSON object with a summary and description."
+        },
+        {
+          "name": "get_retriever",
+          "summary": "This function retrieves information from a specified model and documents."
+        }
+      ],
+      "classes": [
+        {
+          "name": "FaissRetriever",
+          "docstring": "",
+          "methods": [
+            "__init__",
+            "_build",
+            "_save",
+            "_load",
+            "retrieve",
+            "rebuild_index"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "rag\\router.py",
+      "docstring": "Query Router Module \u2013 Developer Guide\nRoutes a user query to the appropriate knowledge context.\nPurpose:\n- Categorize a natural language query for retrieval\n- Supports multiple knowledge domains:\n- EDA (exploratory data analysis)\n- ML (modeling / training / pipeline)\n- General fallback\nCore Function:\nroute_query(query: str) -> str\n- Input: a user query string\n- Output: route key as string: \"eda\", \"ml\", or \"general\"\n- Behavior:\n- Matches keywords in lowercase\n- Returns first matching route\n- Falls back to \"general\" if no match\nUsage Example:\nroute = route_query(\"How to handle missing values in Age column?\")\nprint(route)\n# \"eda\"\nroute = route_query(\"Train a regression model\")\nprint(route)\n# \"ml\"",
+      "summary": {
+        "summary": "This module routes user queries to the appropriate knowledge context based on keywords.",
+        "description": "It categorizes natural language queries for retrieval, supporting EDA, ML, and a general fallback. The core function `route_query` analyzes the query and returns a route key ('eda', 'ml', or 'general') based on keyword matching."
+      },
+      "functions": [
+        {
+          "name": "route_query",
+          "summary": "Generates a JSON object with a summary and description."
+        }
+      ],
+      "classes": []
+    },
+    {
+      "file": "tests\\evaluation\\evaluator.py",
+      "docstring": "",
+      "summary": {
+        "summary": "This file contains functions for evaluating cases and generating summary reports.",
+        "description": "The `evaluate_case` function performs the core evaluation logic. The `run_evaluation` function orchestrates the evaluation process and produces a structured output.  It leverages the `evaluate_case` function to obtain the evaluation results."
+      },
+      "functions": [
+        {
+          "name": "evaluate_case",
+          "summary": "Evaluates a case and returns a result."
+        },
+        {
+          "name": "run_evaluation",
+          "summary": "Generates a JSON object with a summary and description."
+        }
+      ],
+      "classes": []
+    },
+    {
+      "file": "total_context\\docstring_extractor.py",
+      "docstring": "Docstring Extractor\nExtracts all human-readable module, class, and function docstrings from a Python project.\nUsage:\npython -m total_context.docstring_extractor <project_path>\nExample:\npython -m total_context.docstring_extractor X:\\RAG_Agent\\RAG_Agent\nFeatures:\n- Ignores irrelevant folders/files (configurable)\n- Skips __init__.py unless it has a docstring\n- Prints summary to terminal\n- Saves output in docstrings.txt in the script folder",
+      "summary": {
+        "summary": "This script extracts docstrings from a Python project and saves them to a file.",
+        "description": "It identifies and gathers human-readable docstrings from modules, classes, and functions within a specified project directory. The script ignores irrelevant folders and files, skips __init__.py unless it contains a docstring, and provides a summary of the process to the terminal. The extracted docstrings are then saved to a file named docstrings.txt."
+      },
+      "functions": [
+        {
+          "name": "extract_docstrings",
+          "summary": "This function extracts docstrings from a file."
+        },
+        {
+          "name": "extract_project_docstrings",
+          "summary": "This function extracts project documentation strings."
+        },
+        {
+          "name": "main",
+          "summary": "Generates JSON objects according to specified rules."
+        }
+      ],
+      "classes": []
+    },
+    {
+      "file": "total_context\\project_summary.py",
+      "docstring": "Docstring Extractor \u2013 Clean Version\nScans a Python project folder and extracts all human-readable module, class,\nand function docstrings into a JSON file.\nExcludes:\n- Empty modules (including __init__.py without docstring)\n- Specified folders (models, data, etc.)\n- Hidden/system folders or files",
+      "summary": {
+        "summary": "This tool extracts and formats human-readable docstrings from Python projects into a structured JSON output.",
+        "description": "It scans a project directory, identifying modules, classes, and functions with docstrings.  The tool filters out empty modules and specific folders to focus on relevant documentation.  The extracted information is then organized into a JSON file following a predefined schema."
+      },
+      "functions": [
+        {
+          "name": "extract_docstrings",
+          "summary": "Extracts docstrings from Python files."
+        },
+        {
+          "name": "extract_project_docstrings",
+          "summary": "Extracts human-readable docstrings from a project directory."
+        },
+        {
+          "name": "main",
+          "summary": "Generates JSON objects according to specified rules."
+        }
+      ],
+      "classes": []
+    },
+    {
+      "file": "total_context\\structure_extractor.py",
+      "docstring": "analyzer.py\nProject Structure Analyzer for RAG_Agent\nPurpose:\nThis module recursively analyzes the RAG_Agent project folder, producing\na clean, filtered view of the project structure. It can:\n1. Generate an ASCII tree of the folder structure.\n2. Exclude specified folders, file types, or keywords.\n3. Optionally be extended to extract Python functions, classes, and docstrings.\nExclusions:\n- Folder-level exclusions via `EXCLUDE_PATHS`.\n- Keyword-based exclusions via `EXCLUDE_KEYWORDS`.\n- File-type exclusions via `EXCLUDE_EXTENSIONS`.\n- Hidden/system files are automatically skipped.\nUsage:\n1. Place this script inside `total_context/`.\n2. Configure your exclusions at the top of the script:\nEXCLUDE_PATHS = {\"models/minilm\", \"data/pdfs\"}\nEXCLUDE_KEYWORDS = {\"onnx\", \"openvino\"}\nEXCLUDE_EXTENSIONS = {\".pdf\"}\n3. Run the script from the `RAG_Agent` folder:\npython total_context/analyzer.py\n4. The generated ASCII tree will be written to:\ntotal_context/project_tree.txt\n5. Optionally, you can adjust `EXCLUDE_PATHS`, `EXCLUDE_KEYWORDS`, or\n`EXCLUDE_EXTENSIONS` dynamically for different runs.\nExample Output (ASCII tree):\nRAG_Agent\n\u251c\u2500\u2500 core\n\u2502   \u251c\u2500\u2500 config.py\nNotes:\n- This tool is primarily for documentation and for generating\nLLM-friendly project maps.\n- For LLM ingestion, consider extending this script to export\na JSON structure with docstrings, functions, and classes.",
+      "summary": {
+        "summary": "Analyzes the RAG_Agent project structure, generating a filtered tree representation for documentation and LLM ingestion.",
+        "description": "This script recursively examines the RAG_Agent project directory, excluding specified folders, file types, and keywords. It produces an ASCII tree of the remaining files and folders, primarily intended for documentation purposes and to create LLM-friendly project maps.  The script's behavior is configurable through exclusion lists, allowing for tailored analysis based on project needs.  It also provides a framework for future extensions to extract more detailed information, such as Python functions and docstrings."
+      },
+      "functions": [
+        {
+          "name": "should_exclude",
+          "summary": "This function determines if a file path should be excluded from processing."
+        },
+        {
+          "name": "is_ignored",
+          "summary": "This function checks if a given path is within a specified root path."
+        },
+        {
+          "name": "build_clean_tree",
+          "summary": "Generates a clean JSON tree structure."
+        },
+        {
+          "name": "write_tree_to_file",
+          "summary": "Generates JSON based on provided arguments."
+        },
+        {
+          "name": "main",
+          "summary": "Generates a JSON object with a summary and description."
+        }
+      ],
+      "classes": []
+    }
+  ]
+}

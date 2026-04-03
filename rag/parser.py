@@ -49,64 +49,86 @@ from core.exceptions import ParserError
 
 logger = get_logger(__name__)
 
+import re
 
-def parse_report(report_text: str) -> List[Dict]:
+def parse_report(report_text: str):
     """
-    Parse structured EDA report into column-level data
+    Parse dataset report into column metadata.
 
-    Output:
-    [
-        {
-            "column": "Age",
-            "missing_count": 177,
-            "missing_percent": 19.8,
-            "dtype": "numeric"
-        },
-        ...
-    ]
+    Returns:
+        List[dict] with:
+        - column
+        - dtype
+        - missing_percent
     """
 
-    if not report_text or not report_text.strip():
-        logger.error("Empty report received")
-        raise ParserError("Report text is empty")
+    columns = []
 
-    try:
-        logger.info("Starting structured EDA report parsing")
+    # ---------------------------
+    # 1. Extract missing section
+    # ---------------------------
+    missing_section = re.search(
+        r"Missing by Column\n[-]+\n(.*?)\n\n",
+        report_text,
+        re.DOTALL
+    )
 
-        # 🔹 Extract base info
-        rows = extract_rows(report_text)
-        missing_by_column = extract_missing_by_column(report_text)
-        numeric_cols, categorical_cols = extract_column_types(report_text)
+    missing_data = {}
 
-        parsed_data = []
+    if missing_section:
+        content = missing_section.group(1).strip()
 
-        for col, missing_count in missing_by_column.items():
-            try:
-                dtype = resolve_dtype(col, numeric_cols, categorical_cols)
+        if content.lower() != "none":
+            for line in content.split("\n"):
+                match = re.match(r"(.+?):\s*(\d+)%", line)
+                if match:
+                    col = match.group(1).strip()
+                    pct = int(match.group(2))
+                    missing_data[col] = pct
 
-                missing_percent = compute_missing_percent(
-                    missing_count, rows
-                )
+    # ---------------------------
+    # 2. Extract column types
+    # ---------------------------
+    type_section = re.search(
+        r"Column Types\n[-]+\n(.*?)\n\n",
+        report_text,
+        re.DOTALL
+    )
 
-                col_data = {
-                    "column": col,
-                    "missing_count": missing_count,
-                    "missing_percent": missing_percent,
-                    "dtype": dtype,
-                }
+    if not type_section:
+        return []
 
-                logger.info(f"Parsed column: {col_data}")
-                parsed_data.append(col_data)
+    type_content = type_section.group(1)
 
-            except Exception as e:
-                logger.error(f"Failed processing column {col}: {str(e)}")
+    numeric_cols = []
+    categorical_cols = []
 
-        logger.info("Parsing completed successfully")
-        return parsed_data
+    for line in type_content.split("\n"):
+        if "Numeric" in line:
+            numeric_cols = [c.strip() for c in line.split(":")[1].split(",")]
+        elif "Categorical" in line:
+            categorical_cols = [c.strip() for c in line.split(":")[1].split(",")]
 
-    except Exception as e:
-        logger.exception(f"Parsing failed: {str(e)}")
-        raise ParserError(f"Parsing failed: {str(e)}")
+    # ---------------------------
+    # 3. Build column objects
+    # ---------------------------
+    all_columns = []
+
+    for col in numeric_cols:
+        all_columns.append({
+            "column": col,
+            "dtype": "numeric",
+            "missing_percent": missing_data.get(col, 0)
+        })
+
+    for col in categorical_cols:
+        all_columns.append({
+            "column": col,
+            "dtype": "categorical",
+            "missing_percent": missing_data.get(col, 0)
+        })
+
+    return all_columns
 
 
 # -----------------------------
@@ -200,3 +222,24 @@ def compute_missing_percent(missing_count: int, total_rows: int) -> float:
     except Exception as e:
         logger.error(f"Error computing missing %: {str(e)}")
         return 0.0
+    
+
+def normalize_decision(decision: str) -> str:
+    decision = decision.lower()
+
+    if "drop" in decision:
+        return "drop_column"
+    elif "mean" in decision:
+        return "impute_mean"
+    elif "median" in decision:
+        return "impute_median"
+    elif "mode" in decision:
+        return "impute_mode"
+    elif "encode" in decision:
+        return "encode_onehot"
+    elif "normalize" in decision:
+        return "normalize"
+    elif "standardize" in decision:
+        return "standardize"
+
+    return "keep"

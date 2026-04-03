@@ -58,10 +58,10 @@ for r in results:
     print(f"{r['column']}: {r['decision']}")
 """
 
-from rag.parser import parse_report
+from rag.parser import parse_report,normalize_decision
 from rag.query import build_query
 from rag.retriever import FaissRetriever
-from rag.reasoning import build_prompt, call_llm_with_fallback
+from rag.reasoning import build_prompt, call_llm_with_fallback,parse_llm_output
 from rag.critic import review_decision
 from rag.router import route_query
 from rag.knowledge import load_txt, load_pdf
@@ -96,7 +96,10 @@ def apply_guardrails(column_data):
     missing = column_data.get("missing_percent", 0)
 
     if missing == 0:
-        return "Decision: No action needed\nReason: Column has no missing values"
+        return  {
+    "hint": "no_missing_values",
+    "reason": "Column has no missing values"
+}
 
     if missing > 70:
         return "Decision: Drop column\nReason: Too many missing values (>70%)"
@@ -113,12 +116,29 @@ def load_report(report_path: str) -> str:
 
     except Exception as e:
         raise ParserError(f"Failed to read report: {str(e)}")
+    
+def process_column(col: dict) -> bool:
+    """
+    Decide whether a column needs LLM processing
+    """
+
+    missing = col.get("missing_percent", 0)
+    dtype = col.get("dtype")
+
+    # 🚫 Skip clean numeric columns
+    if missing == 0 and dtype == "numeric":
+        return False
+
+    # 🚫 Skip low-value categoricals (optional tweak later)
+    if missing == 0 and dtype == "categorical":
+        return False
+
+    return True
 
 
 # -----------------------------
 # MAIN PIPELINE
 # -----------------------------
-
 def run_pipeline(report_path: str):
     try:
         logger.info("Starting pipeline")
@@ -139,38 +159,72 @@ def run_pipeline(report_path: str):
 
         # 5. Process each column
         for column_data in parsed_columns:
-
             col_name = column_data.get("column", "unknown")
-            logger.info(f"Processing column: {col_name}")
+            logger.info(f"[PIPELINE] Processing column: {col_name}")
 
             try:
-                # Guardrails
+                # 0. Pre-filter
+                missing = column_data.get("missing_percent", 0)
+
+                # Only skip truly useless columns (optional)
+                if missing == 0 and column_data.get("dtype") == "numeric":
+                    logger.debug(f"[LIGHT PASS] {col_name} has no missing values")
+
+                # 1. Guardrails
                 guardrail = apply_guardrails(column_data)
+
                 if guardrail:
+                    logger.info(f"[GUARDRAIL] Hint for {col_name}: {guardrail}")
                     final_results.append({
                         "column": col_name,
                         "decision": guardrail
                     })
-                    continue
+                    # continue
 
-                # Query
+                # 2. Query
                 query = build_query(column_data)
+                logger.debug(f"[QUERY] {col_name}: {query}")
 
-                # Retrieve
+                # 3. Retrieve
                 retrieved_docs = retriever.retrieve(query, k=2)
 
-                # Prompt
+                if not retrieved_docs:
+                    logger.warning(f"[RETRIEVAL] No docs found for {col_name}")
+
+                # 4. Prompt
                 prompt = build_prompt(column_data, retrieved_docs)
 
-                # LLM
-                decision = call_llm_with_fallback(column_data, retriever)
+                # 5. LLM
+                decision_raw = call_llm_with_fallback(column_data, retriever)
 
-                # Critic
-                final_decision = review_decision(column_data, retrieved_docs, decision)
+                if not decision_raw or not decision_raw.strip():
+                    logger.warning(f"[LLM] Empty response for {col_name}")
+                    decision_raw = "Decision: Unable to determine\nReason: Empty LLM output"
 
-                if not final_decision.strip():
-                    final_decision = decision or "Decision: Unable to determine"
+                # 6. Parse
+                parsed_output = parse_llm_output(decision_raw)
 
+                if not parsed_output.get("decision"):
+                    logger.warning(f"[PARSE] Failed for {col_name}")
+                    parsed_output = {
+                        "decision": decision_raw,
+                        "reason": "Fallback: parsing failed"
+                    }
+
+                parsed_output["decision"] = normalize_decision(parsed_output["decision"])
+
+                # 7. Critic
+                final_decision = review_decision(
+                    column_data,
+                    retrieved_docs,
+                    parsed_output
+                )
+
+                if not final_decision or not final_decision.strip():
+                    logger.warning(f"[CRITIC] Empty decision for {col_name}")
+                    final_decision = parsed_output["decision"]
+
+                # 8. Save result
                 final_results.append({
                     "column": col_name,
                     "query": query,
@@ -178,15 +232,24 @@ def run_pipeline(report_path: str):
                 })
 
             except Exception as inner_e:
-                logger.exception(f"Error processing {col_name}: {str(inner_e)}")
+                logger.exception(f"[ERROR] Failed processing {col_name}: {str(inner_e)}")
+
                 final_results.append({
                     "column": col_name,
                     "decision": "Error",
                     "error": str(inner_e)
                 })
+        
+        # 9. Dataset-level fallback (AFTER LOOP)
+        if not final_results:
+            logger.info("[PIPELINE] No actionable columns found")
+            final_results.append({
+                "column": "Dataset",
+                "decision": "No preprocessing required\nReason: No missing values or issues detected"
+            })
 
-        logger.info("Pipeline completed successfully")
-        return final_results
+        logger.info("[PIPELINE] Completed successfully")
+        return final_results or []
 
     except Exception as e:
         logger.exception(f"Pipeline failed: {str(e)}")
@@ -241,6 +304,7 @@ def run_query(query: str) -> str:
 
 def safe_run_pipeline(report_path: str):
     try:
+        # print("\n[DEBUG] Pipeline started")
         return run_pipeline(report_path)
 
     except FileNotFoundError:

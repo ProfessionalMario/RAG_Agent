@@ -11,8 +11,8 @@ Excludes:
 - Hidden/system folders or files
 """
 
-from total_context.structure_extractor import build_clean_tree, write_tree_to_file
-from total_context.docstring_extractor import extract_project_docstrings
+from structure_extractor import build_clean_tree, write_tree_to_file
+from docstring_extractor import extract_project_docstrings
 import os
 import ast
 import json

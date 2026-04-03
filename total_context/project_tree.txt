@@ -26,12 +26,16 @@
 ├── reports.txt
 ├── requirements.txt
 ├── storage
+│   ├── faiss
+│   │   ├── docs.pkl
+│   │   └── index.faiss
 │   ├── knowledge_base
 │   │   ├── eda_chunks.json
 │   │   └── eda_rules.txt
 │   ├── logs
 │   │   └── app.log
 │   └── project_structure.json
+├── tes.py
 ├── tests
 │   ├── conftest.py
 │   ├── evaluation
