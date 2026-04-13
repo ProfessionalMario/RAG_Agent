@@ -1,3 +1,4 @@
+# JOB: Deterministic Logic Validator. IN: decision + profile. OUT: 'OK' | 'REJECT' | 'HINT'.
 """
 LLM Decision Reviewer – Developer Guide
 
@@ -31,33 +32,73 @@ Safety Notes:
 
 """
 
-
 from core.logger import get_logger
-import requests
+# from core.config import ENGINE
+from rag.reasoning import call_llm_with_fallback
 
 logger = get_logger(__name__)
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "gemma3:1b"
+
+def _safe_to_string(decision):
+    """Ensure decision is always a clean string"""
+    if isinstance(decision, dict):
+        return decision.get("decision", str(decision))
+    return str(decision)
 
 
-def review_decision(column_data, retrieved_docs, decision):
+def _parse_critic_output(output: str):
+    try:
+        lines = output.split("\n")
+        logger.debug(f"[CRITIC RAW OUTPUT] {output}")
+        final_decision = None
+        confidence = "low"
+
+        for line in lines:
+            line = line.strip().lower()
+
+            if "final decision" in line:
+                final_decision = line.split(":", 1)[-1].strip()
+
+            elif "confidence" in line:
+                confidence = line.split(":", 1)[-1].strip()
+
+        # 🔥 fallback (CRITICAL FIX)
+        if not final_decision:
+            # try extracting meaningful keyword
+            final_decision = output.strip()
+
+        return final_decision, confidence
+
+    except Exception:
+        return None, "low"
+
+
+def review_decision(column_data, retrieved_docs, decision,retriever):
     """
-    Review and refine LLM decision.
-    Rejects low-confidence or unsafe outputs.
+    Engine-aware critic:
+    - Uses Gemini OR local LLM
+    - Applies strict safety filtering
     """
 
     try:
-        col = column_data.get("column")
-        dtype = column_data.get("dtype")
+        col = column_data.get("column", "unknown")
+        dtype = column_data.get("dtype", "unknown")
         missing = round(column_data.get("missing_percent", 0))
 
-        # Handle empty knowledge
+        decision_str = _safe_to_string(decision)
+        logger.debug(f"[CRITIC INPUT] Decision: {decision_str}")
+        logger.info(f"[RETRIEVED DOCS] {retrieved_docs}")
+        # ---------------------------
+        # Knowledge formatting
+        # ---------------------------
         if not retrieved_docs:
             knowledge = "- No supporting knowledge available"
         else:
-            knowledge = "\n".join(f"- {doc}" for doc in retrieved_docs)
+            knowledge = "\n".join(f"- {doc}" for doc in retrieved_docs[:3])
 
+        # ---------------------------
+        # Prompt
+        # ---------------------------
         prompt = f"""
 You are a strict senior ML reviewer.
 
@@ -68,7 +109,7 @@ Knowledge:
 {knowledge}
 
 Proposed Decision:
-{decision}
+{decision_str}
 
 Task:
 - Critically evaluate the decision
@@ -76,52 +117,44 @@ Task:
 - Do NOT agree blindly
 
 Rules:
-- Be precise (mean, median, mode, drop, etc.)
+- Be precise (mean, median, mode, drop, encoding, scaling)
 - Only use given knowledge
 - Be conservative if unsure
 
-Output format:
+Output EXACTLY:
 
 Final Decision: <refined decision>
-Confidence: <High/Medium/Low>
+Confidence: <high/medium/low>
 Review: <short explanation>
 """
 
-        response = requests.post(
-            OLLAMA_URL,
-            json={
-                "model": MODEL_NAME,
-                "prompt": prompt,
-                "stream": False,
-                "options": {"temperature": 0.1}
-            },
-            timeout=120
-        )
+        # output = call_llm_with_fallback(column_data,retriever)
+        output = call_llm_with_fallback(prompt)
 
-        if response.status_code != 200:
-            logger.error(f"Ollama error: {response.text}")
-            return decision
+        if not output or not str(output).strip():
+            logger.warning(f"[CRITIC] Empty response for {col}")
+            return decision_str
 
-        output = response.json().get("response", "").strip()
+        # ---------------------------
+        # Parse output
+        # ---------------------------
+        final_decision, confidence = _parse_critic_output(output)
 
-        # 🔍 Validate structure
-        if "Final Decision:" not in output or "Confidence:" not in output:
-            logger.warning("Invalid review format, falling back")
-            return decision
+        if not final_decision:
+            logger.warning(f"[CRITIC] Parsing failed for {col}")
+            return decision_str
 
-        # 🔍 Extract fields
-        final_decision = output.split("Final Decision:")[-1].split("Confidence:")[0].strip()
-        confidence = output.split("Confidence:")[-1].split("Review:")[0].strip().lower()
+        # ---------------------------
+        # Safety filter
+        # ---------------------------
+        if confidence in ["low"]:
+            logger.warning(f"[CRITIC] Rejected low-confidence decision for {col}")
+            return "Use standard safe preprocessing (median for numeric, mode for categorical)"
 
-        # 🚨 Safety filter (core logic)
-        if confidence in ["low", "medium"]:
-            logger.warning(f"Rejected low-confidence decision for {col}")
-            return "Use standard safe preprocessing (e.g., median/mode imputation)"
-
-        logger.info(f"Accepted reviewed decision for {col}")
+        logger.info(f"[CRITIC] Accepted decision for {col}")
 
         return final_decision
 
     except Exception as e:
-        logger.error(f"Critic failed: {str(e)}")
-        return decision
+        logger.error(f"[CRITIC] Failed for {column_data.get('column')}: {str(e)}")
+        return _safe_to_string(decision)

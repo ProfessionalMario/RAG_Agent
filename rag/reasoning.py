@@ -47,127 +47,94 @@ print(decision)
 #  Reason: Numeric column with moderate missing values and likely skewed distribution"
 """
 
-
 import requests
 from typing import List, Dict
-
 from core.logger import get_logger
 
 logger = get_logger(__name__)
 
-
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "gemma3:4b"  # or "gemma:2b" depending on your setup
-
+MODEL_NAME = "gemma3:1b"  
 
 def build_prompt(column_data: Dict, retrieved_docs: List[str]) -> str:
-    """
-    Build constrained prompt for reasoning
-    """
-
-    col = column_data.get("column")
-    dtype = column_data.get("dtype")
+    """Build structured prompt for the LLM using RAG context."""
+    col = column_data.get("column", "Unknown")
+    dtype = column_data.get("dtype", "Unknown")
     missing = round(column_data.get("missing_percent", 0))
-
-    knowledge = "\n".join(f"- {doc}" for doc in retrieved_docs)
+    
+    # Format knowledge into a bulleted list
+    knowledge = "\n".join(f"- {doc}" for doc in retrieved_docs) if retrieved_docs else "No specific domain knowledge found."
 
     prompt = f"""
-    You are a senior ML engineer.
+You are a senior ML engineer specializing in data preprocessing.
 
-    Column:
-    - Name: {col}
-    - Type: {dtype}
-    - Missing: {missing}%
+CONTEXT FROM DOCUMENTATION:
+{knowledge}
 
-    Knowledge:
-    {knowledge}
+TARGET COLUMN:
+- Name: {col}
+- Data Type: {dtype}
+- Missing Values: {missing}%
 
-    Task:
-    Give the BEST preprocessing decision.
+TASK:
+Determine the best preprocessing action (e.g., mean imputation, median imputation, mode imputation, drop, or keep).
+If the provided context suggests a specific business rule for this column, follow it. 
+Otherwise, use standard ML best practices.
 
-    Rules:
-    - Be specific (mean, median, drop, mode)
-    - If knowledge is insufficient, make the safest general ML decision
-    - Be concise
-
-    Output:
-
-    Decision: <specific action>
-    Reason: <clear justification>
-    """
-
+OUTPUT FORMAT (Strict):
+Decision: <action>
+Reason: <brief justification>
+"""
     return prompt.strip()
 
-
-def call_llm_with_fallback(column_data: Dict, retriever, model_name: str = MODEL_NAME) -> str:
+def call_llm_with_fallback(prompt: str, model_name: str = MODEL_NAME) -> str:
     """
-    Call Ollama LLM with FAISS retrieval fallback.
-    If Ollama fails or returns empty, fallback to FAISS retrieval.
+    Pure LLM call. Does one thing: Talks to Ollama.
     """
-    # Retrieve docs once
-    retrieved_docs = retriever.retrieve(column_data.get("column", ""))
-    prompt = build_prompt(column_data, retrieved_docs)
-
     try:
-        logger.info(f"Querying Ollama for column '{column_data.get('column')}'")
-
+        logger.info(f"Sending prompt to Ollama ({model_name})")
+        
         response = requests.post(
             OLLAMA_URL,
             json={
                 "model": model_name,
                 "prompt": prompt,
-                "stream": False
+                "stream": False,
+                "options": {
+                    "temperature": 0.1,  # Keep it deterministic
+                    "num_predict": 100   # Keep it concise
+                }
             },
-            timeout=120
+            timeout=60
         )
-
+        
         if response.status_code != 200:
-            logger.warning(f"Ollama returned {response.status_code}. Falling back to FAISS.")
-            return "\n".join(retrieved_docs) or "No relevant knowledge found."
+            logger.error(f"Ollama error {response.status_code}: {response.text}")
+            return "Decision: keep\nReason: LLM service error"
 
-        output = response.json().get("response", "")
-        if not output.strip():
-            logger.warning("Ollama returned empty response. Using FAISS fallback.")
-            return "\n".join(retrieved_docs) or "No relevant knowledge found."
-
-        logger.info("LLM response received successfully")
-        return output.strip()
+        result = response.json().get("response", "")
+        return result.strip()
 
     except Exception as e:
-        logger.warning(f"Ollama call failed: {e}. Using FAISS retrieval fallback.")
-        return "\n".join(retrieved_docs) or "No relevant knowledge found."
-    
+        logger.error(f"Ollama connection failed: {e}")
+        return "Decision: keep\nReason: LLM connection timeout"
 
-def parse_llm_output(output: str) -> Dict:
-    """
-    Convert LLM text output into structured dict.
+def parse_llm_output(output: str) -> Dict[str, str]:
+    """Extracts Decision and Reason from LLM text."""
+    decision = "keep"
+    reason = "Fallback applied"
 
-    Expected format:
-    Decision: <...>
-    Reason: <...>
-    """
+    if not output:
+        return {"decision": decision, "reason": reason}
 
-    decision = ""
-    reason = ""
-
-    try:
-        lines = output.split("\n")
-        for line in lines:
-            if "Decision:" in line:
-                decision = line.split("Decision:")[-1].strip()
-            elif "Reason:" in line:
-                reason = line.split("Reason:")[-1].strip()
-
-        if not decision:
-            decision = "keep"
-        if not reason:
-            reason = "Fallback: No clear reasoning from model"
-
-    except Exception:
-        decision = "keep"
-        reason = "Parsing failed, safe fallback applied"
+    lines = output.split("\n")
+    for line in lines:
+        if line.lower().startswith("decision:"):
+            decision = line.split(":", 1)[1].strip()
+        elif line.lower().startswith("reason:"):
+            reason = line.split(":", 1)[1].strip()
 
     return {
-        "decision": decision.lower().replace(" ", "_"),
+        "decision": decision,
         "reason": reason
     }

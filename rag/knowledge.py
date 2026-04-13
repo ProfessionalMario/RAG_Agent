@@ -1,215 +1,302 @@
-"""
-Knowledge Base Loader – Developer Guide
 
-This module provides utilities to manage and preprocess PDFs/TXT into
-knowledge chunks for embedding, retrieval, or analysis.
 
---------------------------------------------------------------------------------
-Callable Functions:
---------------------------------------------------------------------------------
-
-has_knowledge() -> bool
-    - Checks if knowledge chunks exist.
-    - Output: True/False
-
-load_chunks() -> List[str]
-    - Loads saved knowledge chunks from storage.
-    - Output: List of chunks (empty if not found or error).
-
-get_latest_pdf_timestamp() -> float
-    - Returns the most recent modification time of PDFs in the data folder.
-    - Output: Timestamp as float.
-
-ensure_knowledge_ready()
-    - Checks if knowledge chunks are missing or outdated.
-    - Rebuilds chunks if needed.
-
-rebuild_knowledge()
-    - Recreates knowledge chunks from all PDFs.
-    - Calls `load_all_pdfs` and `save_chunks`.
-
-save_chunks(chunks: List[str])
-    - Saves a list of text chunks to storage.
-    - Input: chunks
-    - Output: Written JSON file.
-
-load_all_pdfs(folder_path: str) -> List[str]
-    - Loads and splits all PDFs in a folder into chunks.
-    - Input: folder path
-    - Output: List of text chunks
-
-load_txt(path: str) -> List[str]
-    - Loads a TXT file as lines, ignoring empties.
-    - Input: path
-    - Output: List of non-empty stripped lines
-
-load_pdf(path: str) -> List[str]
-    - Loads a PDF file and splits pages into chunks.
-    - Input: path
-    - Output: List of text chunks
-
-split_text(text: str, chunk_size: int = 300) -> List[str]
-    - Splits a long string into word-based chunks.
-    - Input: text, optional chunk size
-    - Output: List of text chunks
-
---------------------------------------------------------------------------------
-Usage Notes:
---------------------------------------------------------------------------------
-from knowledge import load_chunks, ensure_knowledge_ready
-
-ensure_knowledge_ready()
-chunks = load_chunks()
-print(f"Loaded {len(chunks)} chunks")
-
-"""
-
-from typing import List
-from pypdf import PdfReader
 import os
-import json
+import re
+import faiss
+import pickle
+import numpy as np
+from nltk.tokenize import sent_tokenize
+from sentence_transformers import SentenceTransformer
+from pathlib import Path
+from extractor.pdf_parsing import PDFParser  # your module
+import nltk
 from core.logger import get_logger
-
-logger = get_logger(__name__)
-
+from core.exceptions import ParserError
+from typing import List
 import os
-import time
+import pickle
+from typing import List
+from rag.retriever import FAISS_DIR, DOCS_PATH, INDEX_PATH
+from rag.retriever import FaissRetriever, get_model
+from extractor.sentence_rebuilder import rebuild_sentences
+from extractor.text_cleaner import normalize, remove_tables, is_valid_chunk
+from extractor.chunker import generate_extraction_chunks,debug_retrieval_chunks
+logger = get_logger(__name__)
+# -----------------------------
+# CONFIG
+# -----------------------------
+PDF_PATH = "data/pdfs/Data_Analysis.pdf"
+TMP_MD_PATH = "output2.md"
+STORAGE_DIR = Path("storage")
+INDEX_PATH = STORAGE_DIR / "faiss.index"
+# META_PATH = STORAGE_DIR / "meta.pkl"
+CHUNK_SIZE = 150
+CHUNK_OVERLAP = 30
+# MODEL_NAME = "all-MiniLM-L6-v2"
+MODEL_NAME = "BAAI/bge-small-en-v1.5"
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CHUNK_PATH = os.path.join(BASE_DIR, "storage", "knowledge_base", "eda_chunks.json")
-PDF_DIR = os.path.join(BASE_DIR, "data", "pdfs")
+STORAGE_DIR.mkdir(exist_ok=True)
+nltk.download('punkt')
 
+import hashlib
 
-def has_knowledge():
-    return os.path.exists(CHUNK_PATH)
-
-
-def load_chunks():
-    """
-    Load knowledge chunks (no path required externally)
-    """
-
-    try:
-        if not os.path.exists(CHUNK_PATH):
-            logger.warning("Chunks not found")
-            return []
-
-        with open(CHUNK_PATH, "r", encoding="utf-8") as f:
-            chunks = json.load(f)
-
-        logger.info(f"Loaded {len(chunks)} chunks")
-        return chunks
-
-    except Exception as e:
-        logger.exception(f"Failed to load chunks: {str(e)}")
+# -----------------------------
+# 1️⃣ Load saved knowledge chunks
+# -----------------------------
+def load_chunks() -> List[str]:
+    if not os.path.exists(DOCS_PATH):
         return []
 
-def get_latest_pdf_timestamp():
-    times = []
-    for f in os.listdir(PDF_DIR):
-        if f.endswith(".pdf"):
-            times.append(os.path.getmtime(os.path.join(PDF_DIR, f)))
-    return max(times) if times else 0
+    # 🚨 Critical fix: check empty file
+    if os.path.getsize(DOCS_PATH) == 0:
+        logger.warning("[LOAD CHUNKS] Empty file detected. Deleting...")
+        os.remove(DOCS_PATH)
+        return []
 
+    try:
+        with open(DOCS_PATH, "rb") as f:
+            data = pickle.load(f)
+            logger.info(f"[VERIFY] DOCS_PATH size: {os.path.getsize(DOCS_PATH)} bytes")
+            if isinstance(data, list):
+                return data
+            elif isinstance(data, dict) and "chunks" in data:
+                return data["chunks"]
+            else:
+                return []
 
+    except Exception as e:
+        logger.warning(f"[LOAD CHUNKS FAILED] {e}")
+
+        # 🚨 Auto-recovery
+        os.remove(DOCS_PATH)
+        logger.warning("[LOAD CHUNKS] Corrupted file deleted")
+
+        return []
+
+# -----------------------------
+# 2️⃣ Ensure knowledge is ready
+# -----------------------------
 def ensure_knowledge_ready():
-    if not os.path.exists(CHUNK_PATH):
-        logger.info("No chunks → building knowledge")
-        rebuild_knowledge()
+    """
+    Ensure FAISS index + chunks exist.
+    If missing → build from PDF pipeline.
+    """
+
+    index_exists = os.path.exists(INDEX_PATH)
+    docs_exists = os.path.exists(DOCS_PATH)
+
+    if index_exists and docs_exists and load_chunks():
+        logger.info("[KNOWLEDGE] FAISS + chunks already exist. Skipping rebuild.")
         return
 
-    chunk_time = os.path.getmtime(CHUNK_PATH)
-    pdf_time = get_latest_pdf_timestamp()
+    logger.warning("[KNOWLEDGE] Missing index or docs. Building knowledge base...")
 
-    if pdf_time > chunk_time:
-        logger.info("PDF changed → rebuilding knowledge")
-        rebuild_knowledge()
+    # 🚀 Call your real pipeline
+    main()
 
 
-def rebuild_knowledge():
-    chunks = load_all_pdfs(PDF_DIR)
-    save_chunks(chunks)
+def compute_hash(text: str, config: dict) -> str:
+    combined = text + str(config)
+    return hashlib.sha256(combined.encode("utf-8")).hexdigest()
+
+import hashlib
+
+CONFIG = {
+    "model": MODEL_NAME,
+    "chunk_size": CHUNK_SIZE,
+    "overlap": CHUNK_OVERLAP,
+    "clean_version": "v1.0"
+}
+
+HASH_PATH = "storage/index.hash"
+
+def save_hash(hash_val: str):
+    with open(HASH_PATH, "w") as f:
+        f.write(hash_val)
+
+def load_hash():
+    import os
+    if not os.path.exists(HASH_PATH):
+        return None
+    return open(HASH_PATH).read().strip()
+
+# ==============================
+# 10 ESSENTIAL CLEANING FUNCTIONS
+# ==============================
 
 
-def save_chunks(chunks):
-    try:
-        os.makedirs(os.path.dirname(CHUNK_PATH), exist_ok=True)
+# def normalize_pdf_text(text: str) -> str:
+#     text = re.sub(r'([a-z])\s+([A-Z])', r'\1. \2', text)
+#     text = re.sub(r'(\w+)-\s+(\w+)', r'\1\2', text)
+#     text = re.sub(r'(\w)-\s+(\w)', r'\1\2', text)
+#     text = re.sub(r'\s+', ' ', text)
+#     return text.strip()
 
-        with open(CHUNK_PATH, "w", encoding="utf-8") as f:
-            json.dump(chunks, f, indent=2)
+# def chunk_markdown(md: str, max_words=200):
+#     chunks = []
+#     current_chunk = []
+#     current_len = 0
 
-        logger.info(f"Saved {len(chunks)} chunks")
+#     lines = md.split("\n")
 
-    except Exception as e:
-        logger.error(f"Failed saving chunks: {str(e)}")
+#     for line in lines:
+#         line = line.strip()
+#         if not line:
+#             continue
 
+#         # Treat headings as new chunks
+#         if line.startswith("#"):
+#             if current_chunk:
+#                 chunks.append(" ".join(current_chunk))
+#                 current_chunk = []
+#                 current_len = 0
+
+#         words = line.split()
+#         current_chunk.append(line)
+#         current_len += len(words)
+
+#         if current_len >= max_words:
+#             chunks.append(" ".join(current_chunk))
+#             current_chunk = []
+#             current_len = 0
+
+#     if current_chunk:
+#         chunks.append(" ".join(current_chunk))
+
+#     return chunks
+
+
+# def load_txt(path: str) -> List[str]:
+#     try:
+#         with open(path, "r", encoding="utf-8", errors="ignore") as f:
+#             return [line.strip() for line in f.readlines() if line.strip()]
+#     except Exception as e:
+#         logger.error(f"TXT load failed: {path}")
+#         return []
+
+
+# ==============================
+# RAG CORE PIPELINE
+# ==============================
+
+def build_faiss_index(chunks: list, model_name: str = MODEL_NAME):
+    model = SentenceTransformer(model_name)
+    embeddings = model.encode(chunks, show_progress_bar=True)
+    embeddings = np.array(embeddings).astype("float32")
+    dim = embeddings.shape[1]
+
+    index = faiss.IndexFlatL2(dim)
+    index.add(embeddings)
+    # os.makedirs(STORAGE_DIR, exist_ok=True)
+    logger.info(f"[FAISS BUILD] Total chunks: {len(chunks)}")
+    logger.debug(f"[FAISS SAMPLE] {chunks[:2]}")
+    STORAGE_DIR.mkdir(exist_ok=True)
+    faiss.write_index(index, str(INDEX_PATH))
+    with open(DOCS_PATH, "wb") as f:
+        pickle.dump(chunks, f)
+
+    print(f"[INFO] FAISS index saved at {INDEX_PATH}")
+    return index
+
+# ==============================
+# FULL PIPELINE CALL
+# ==============================
+def peek_chunks(chunks, sample_size=3):
+    """
+    Diagnostic tool to verify chunk quality without memory overhead.
+    """
+    if not chunks:
+        print("\n[!] TEST FAILED: No chunks found.")
+        return
+
+    print(f"\n--- SURGICAL CHUNK DIAGNOSTIC (Total: {len(chunks)}) ---")
     
+    # Check first, middle, and last to ensure consistency
+    indices = [0, len(chunks) // 2, len(chunks) - 1]
+    
+    for i in indices:
+        if i < len(chunks):
+            print(f"\n[CHUNK #{i}]")
+            print(f"Length: {len(chunks[i])} chars")
+            # Print a snippet of the chunk
+            print(f"Content: {chunks[i][:300]}...") 
+            print("-" * 30)
 
-def load_all_pdfs(folder_path: str) -> List[str]:
+def inspect_pipeline_quality(chunks, num_samples=3):
     """
-    Load and chunk all PDFs in a folder
+    Surgically inspects chunks to ensure cleaning and windowing logic 
+    is producing high-quality retrieval candidates.
     """
-    all_chunks = []
+    if not chunks:
+        print("\n[!] CRITICAL: No chunks found. Pipeline is broken.")
+        return
 
-    try:
-        for file in os.listdir(folder_path):
-            if file.endswith(".pdf"):
-                path = os.path.join(folder_path, file)
-                chunks = load_pdf(path)
-                all_chunks.extend(chunks)
+    total = len(chunks)
+    # Pick start, middle, and end indices to see variety
+    sample_indices = [0, total // 2, total - 1] if total > 2 else range(total)
 
-        logger.info(f"Total chunks created: {len(all_chunks)}")
-        return all_chunks
+    print(f"\n{'='*60}")
+    print(f"📊 PIPELINE INSPECTION: {total} Total Chunks Generated")
+    print(f"{'='*60}")
 
-    except Exception as e:
-        logger.error(f"Failed loading PDFs: {str(e)}")
-        return []
-
-def load_txt(path: str) -> List[str]:
-    try:
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            return [line.strip() for line in f.readlines() if line.strip()]
-    except Exception as e:
-        logger.error(f"TXT load failed: {path}")
-        return []
-
-
-def load_pdf(path: str) -> List[str]:
-    try:
-        reader = PdfReader(path)
-
-        chunks = []
-
-        for page in reader.pages:
-            text = page.extract_text()
-            if text:
-                chunks.extend(split_text(text))
-
-        logger.info(f"Loaded PDF: {path}")
-        return chunks
-
-    except Exception as e:
-        logger.error(f"PDF load failed: {path}")
-        return []
+    for idx in sample_indices:
+        chunk = chunks[idx]
+        print(f"\n[SAMPLE CHUNK #{idx}]")
+        print(f"📏 Size: {len(chunk)} characters")
+        print(f"📝 Preview: {chunk[:400]}...") # First 400 chars
+        print(f"{'-'*30}")
+    
+    print("\n[VERIFICATION CHECKLIST]")
+    print("1. Glued words? (e.g. 'theprocess') -> If yes, wordninja failed.")
+    print("2. Tables? (e.g. '|---|') -> If yes, remove_tables failed.")
+    print("3. Cutoffs? -> Check if sentences end abruptly or flow logically.")
+    print(f"{'='*60}\n")
 
 
-def split_text(text: str, chunk_size: int = 300) -> List[str]:
-    words = text.split()
-    chunks = []
+def main():
+    # 1. LIGHTWEIGHT HASH CHECK (Zero Memory Footprint)
+    # Get file stats (size and last modified time) to create a quick fingerprint
+    file_stats = os.stat(PDF_PATH)
+    current_fingerprint = f"{PDF_PATH}_{file_stats.st_size}_{file_stats.st_mtime}"
+    
+    stored_hash = load_hash() # Adjust load_hash to handle this string or its hash
 
-    for i in range(0, len(words), chunk_size):
-        chunk = " ".join(words[i:i + chunk_size])
-        chunks.append(chunk)
+    if current_fingerprint == stored_hash:
+        print("[INFO] Source file unchanged. Skipping heavy processing.")
+        return
 
-    return chunks
+    # 2. Extraction & Refining (The memory-heavy part)
+    parser = PDFParser(pdf_path=PDF_PATH, chunk_pages=10)
+    parsed_data = parser.parse() 
+    
+    processed_chunks = []
+    for block in parsed_data["markdown_blocks"]:
+        fixed_text = rebuild_sentences(block)
+        clean_text = normalize(remove_tables(fixed_text))
+        chunks = generate_extraction_chunks(clean_text, size=512, overlap=64)
+        
+        valid_chunks = [c for c in chunks if is_valid_chunk(c)]
+        processed_chunks.extend(valid_chunks)
 
+    # print("===================","Quality check block","=======================")
+    # peek_chunks(processed_chunks)
+    # # CLEAR BLOCK FROM MEMORY
+    # inspect_pipeline_quality(processed_chunks)
+    # debug_retrieval_chunks(processed_chunks)
+    # print("==========================================")
+    # del block 
+    # 3. FAISS Build
+    if processed_chunks:
+        print(f"[INFO] Building index for {len(processed_chunks)} chunks...")
+        build_faiss_index(processed_chunks)
+        
+        save_hash(current_fingerprint)
+        print("[INFO] Success.")
+        
+        # Explicitly clear chunks before finishing
+        del processed_chunks
+    else:
+        print("[ERROR] No chunks found.")
 
 if __name__ == "__main__":
-
-    pdf_folder = "data/pdfs"
-    output_path = "storage/knowledge_base/eda_chunks.json"
-
-    chunks = load_all_pdfs(pdf_folder)
-    save_chunks(chunks, output_path)
-
-    print("✅ Knowledge base created")
+    main()

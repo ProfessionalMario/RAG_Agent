@@ -37,7 +37,7 @@ models/
 # 📦 Vector DB / Embeddings
 # -----------------------------
 storage/vector_db/
-storage/knowledge_base
+storage
 *.faiss
 *.pkl
 

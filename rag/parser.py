@@ -223,23 +223,44 @@ def compute_missing_percent(missing_count: int, total_rows: int) -> float:
         logger.error(f"Error computing missing %: {str(e)}")
         return 0.0
     
-
 def normalize_decision(decision: str) -> str:
-    decision = decision.lower()
+    """
+    Normalize a raw decision string into a canonical preprocessing action.
 
+    Expected input: str
+    Output: str (one of predefined actions)
+    """
+
+    # 🔒 Type Guard (fail fast)
+    if not isinstance(decision, str):
+        logger.error(f"[NORMALIZE] Invalid type: expected str, got {type(decision)} | value={decision}")
+        raise TypeError(f"normalize_decision expects str, got {type(decision)}")
+
+    original_decision = decision  # keep for logging
+
+    # 🔧 Normalize text
+    decision = decision.lower().strip()
+
+    logger.debug(f"[NORMALIZE] Raw: '{original_decision}' → Processed: '{decision}'")
+
+    # 🎯 Mapping logic
     if "drop" in decision:
-        return "drop_column"
+        result = "drop_column"
     elif "mean" in decision:
-        return "impute_mean"
+        result = "impute_mean"
     elif "median" in decision:
-        return "impute_median"
+        result = "impute_median"
     elif "mode" in decision:
-        return "impute_mode"
+        result = "impute_mode"
     elif "encode" in decision:
-        return "encode_onehot"
+        result = "encode_onehot"
     elif "normalize" in decision:
-        return "normalize"
+        result = "normalize"
     elif "standardize" in decision:
-        return "standardize"
+        result = "standardize"
+    else:
+        result = "keep"
 
-    return "keep"
+    logger.info(f"[NORMALIZE] Final decision: '{result}' (from '{original_decision}')")
+
+    return result
