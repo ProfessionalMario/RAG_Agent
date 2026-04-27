@@ -170,31 +170,168 @@
 
 
 
+# import os
+# import faiss
+# import pickle
+# import numpy as np
+# from typing import List
+# from sentence_transformers import SentenceTransformer
+# from core.logger import get_logger
+# logger = get_logger(__name__)
+# # -----------------------------
+# # CONFIG & MODEL
+# # -----------------------------
+# FAISS_DIR = "storage"
+# INDEX_PATH = os.path.join(FAISS_DIR, "faiss.index")
+# DOCS_PATH = os.path.join(FAISS_DIR, "meta.pkl")
+# _retriever_instance = None
+
+
+# def get_model(model_path: str):
+#     # Using BGE-small as per your 2026 spec
+#     return SentenceTransformer(model_path if model_path.startswith("./") else "BAAI/bge-small-en-v1.5")
+
+# class FaissRetriever:
+#     def __init__(self, model_path: str, documents: List[str]):
+#         logger.info("[Retriever] Initializing FAISS retriever")
+#         self.model = get_model(model_path)
+#         self.index = None
+#         self.documents = []
+
+#         if os.path.exists(INDEX_PATH) and os.path.exists(DOCS_PATH):
+#             self._load()
+#         elif documents:
+#             self._build(documents)
+#         else:
+#             logger.warning("[Retriever] No index found and no documents provided.")
+
+#     def _build(self, documents: List[str]):
+#         logger.info("[Retriever] Building FAISS index")
+#         # Deduplicate and clean
+#         processed = list(set([str(d).strip() for d in documents if len(str(d).split()) >= 5]))
+        
+#         if not processed:
+#             raise ValueError("No valid documents to index")
+
+#         # Encode with BGE Passage Prefix
+#         embeddings = self.model.encode(
+#             [f"passage: {text}" for text in processed], 
+#             show_progress_bar=True
+#         ).astype("float32")
+        
+#         # Normalize for Cosine Similarity (Inner Product)
+#         faiss.normalize_L2(embeddings)
+        
+#         dim = embeddings.shape[1]
+#         self.index = faiss.IndexFlatIP(dim) # IP + Normalized = Cosine Similarity
+#         self.index.add(embeddings)
+#         self.documents = processed
+#         self._save()
+#         logger.info(f"[Retriever] Index built with {self.index.ntotal} vectors")
+
+#     def _save(self):
+#         os.makedirs(FAISS_DIR, exist_ok=True)
+#         faiss.write_index(self.index, INDEX_PATH)
+#         with open(DOCS_PATH, "wb") as f:
+#             pickle.dump(self.documents, f)
+
+#     def _load(self):
+#         logger.info("[Retriever] Loading FAISS index from disk")
+#         self.index = faiss.read_index(INDEX_PATH)
+#         with open(DOCS_PATH, "rb") as f:
+#             self.documents = pickle.load(f)
+
+#     def retrieve(self, query: str, k: int = 3) -> List[str]:
+#         if not query or not self.index:
+#             return []
+        
+#         # Encode with BGE Query Prefix
+#         q_emb = self.model.encode([f"query: {query}"]).astype("float32")
+#         faiss.normalize_L2(q_emb)
+        
+#         D, I = self.index.search(q_emb, k)
+
+#         results = []
+#         for dist, idx in zip(D[0], I[0]):
+#             if 0 <= idx < len(self.documents):
+#                 results.append(self.documents[idx])
+        
+#         return results
+
+#     def rebuild_index(self, documents: List[str]):
+#         self._build(documents)
+
+# # -----------------------------
+# # SINGLETON (Strict Return Type)
+# # -----------------------------
+# _retriever_instance = None
+
+# def get_retriever(model_path: str, docs: List[str]):
+#     global _retriever_instance
+#     if _retriever_instance is None:
+#         _retriever_instance = FaissRetriever(model_path, docs)
+#     elif docs and len(docs) > len(_retriever_instance.documents):
+#         _retriever_instance.rebuild_index(docs)
+    
+#     # Returning the object itself (NOT a tuple) to match original expectation
+#     return _retriever_instance
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import os
 import faiss
 import pickle
 import numpy as np
-from typing import List
+from typing import List, Optional
 from sentence_transformers import SentenceTransformer
 from core.logger import get_logger
+
 logger = get_logger(__name__)
+
 # -----------------------------
-# CONFIG & MODEL
+# CONFIG & PATHS
 # -----------------------------
 FAISS_DIR = "storage"
 INDEX_PATH = os.path.join(FAISS_DIR, "faiss.index")
-DOCS_PATH = os.path.join(FAISS_DIR, "meta.pkl")
-_retriever_instance = None
-
-
-def get_model(model_path: str):
-    # Using BGE-small as per your 2026 spec
-    return SentenceTransformer(model_path if model_path.startswith("./") else "BAAI/bge-small-en-v1.5")
+DOCS_PATH = os.path.join(FAISS_DIR, "docs.pkl") # Standardized with knowledge.py
+MODEL_NAME = "BAAI/bge-small-en-v1.5"
 
 class FaissRetriever:
-    def __init__(self, model_path: str, documents: List[str]):
-        logger.info("[Retriever] Initializing FAISS retriever")
-        self.model = get_model(model_path)
+    def __init__(self, model_name: str = MODEL_NAME, documents: Optional[List[str]] = None):
+        """
+        Retrieval Engine using BGE-small.
+        IP (Inner Product) + L2 Normalization = Cosine Similarity.
+        """
+        logger.info(f"🔍 [RETRIEVER] Initializing with {model_name}")
+        self.model = SentenceTransformer(model_name)
         self.index = None
         self.documents = []
 
@@ -203,31 +340,32 @@ class FaissRetriever:
         elif documents:
             self._build(documents)
         else:
-            logger.warning("[Retriever] No index found and no documents provided.")
+            logger.warning("[RETRIEVER] No index found on disk. Ready for build.")
 
     def _build(self, documents: List[str]):
-        logger.info("[Retriever] Building FAISS index")
-        # Deduplicate and clean
-        processed = list(set([str(d).strip() for d in documents if len(str(d).split()) >= 5]))
-        
-        if not processed:
-            raise ValueError("No valid documents to index")
-
-        # Encode with BGE Passage Prefix
-        embeddings = self.model.encode(
-            [f"passage: {text}" for text in processed], 
-            show_progress_bar=True
-        ).astype("float32")
-        
-        # Normalize for Cosine Similarity (Inner Product)
-        faiss.normalize_L2(embeddings)
-        
-        dim = embeddings.shape[1]
-        self.index = faiss.IndexFlatIP(dim) # IP + Normalized = Cosine Similarity
-        self.index.add(embeddings)
-        self.documents = processed
-        self._save()
-        logger.info(f"[Retriever] Index built with {self.index.ntotal} vectors")
+        """Builds index with BGE 'passage: ' instruction."""
+        try:
+            logger.info(f"[RETRIEVER] Building index for {len(documents)} docs")
+            # Filter and deduplicate
+            processed = list(dict.fromkeys([str(d).strip() for d in documents if len(str(d).split()) >= 3]))
+            
+            # BGE Requirement: Passages must be prefixed
+            passages = [f"passage: {text}" for text in processed]
+            embeddings = self.model.encode(passages, show_progress_bar=True).astype("float32")
+            
+            # Normalize for Cosine Similarity
+            faiss.normalize_L2(embeddings)
+            
+            dim = embeddings.shape[1]
+            self.index = faiss.IndexFlatIP(dim) 
+            self.index.add(embeddings)
+            self.documents = processed
+            
+            self._save()
+            logger.info(f"✅ [RETRIEVER] Index built: {self.index.ntotal} vectors")
+        except Exception as e:
+            logger.error(f"❌ [RETRIEVER] Build failed: {e}")
+            raise
 
     def _save(self):
         os.makedirs(FAISS_DIR, exist_ok=True)
@@ -236,42 +374,64 @@ class FaissRetriever:
             pickle.dump(self.documents, f)
 
     def _load(self):
-        logger.info("[Retriever] Loading FAISS index from disk")
-        self.index = faiss.read_index(INDEX_PATH)
-        with open(DOCS_PATH, "rb") as f:
-            self.documents = pickle.load(f)
+        try:
+            logger.info("[RETRIEVER] Loading assets from storage...")
+            self.index = faiss.read_index(INDEX_PATH)
+            with open(DOCS_PATH, "rb") as f:
+                self.documents = pickle.load(f)
+            logger.info(f"✅ [RETRIEVER] Loaded {len(self.documents)} documents")
+        except Exception as e:
+            logger.error(f"❌ [RETRIEVER] Load failed: {e}")
 
     def retrieve(self, query: str, k: int = 3) -> List[str]:
-        if not query or not self.index:
+        """Search with BGE 'query: ' instruction."""
+        if not query or self.index is None:
             return []
         
-        # Encode with BGE Query Prefix
-        q_emb = self.model.encode([f"query: {query}"]).astype("float32")
-        faiss.normalize_L2(q_emb)
-        
-        D, I = self.index.search(q_emb, k)
+        try:
+            # BGE Requirement: Queries must be prefixed
+            q_emb = self.model.encode([f"query: {query}"]).astype("float32")
+            faiss.normalize_L2(q_emb)
+            
+            scores, indices = self.index.search(q_emb, k)
 
-        results = []
-        for dist, idx in zip(D[0], I[0]):
-            if 0 <= idx < len(self.documents):
-                results.append(self.documents[idx])
-        
-        return results
-
-    def rebuild_index(self, documents: List[str]):
-        self._build(documents)
+            results = []
+            for score, idx in zip(scores[0], indices[0]):
+                if 0 <= idx < len(self.documents):
+                    # Only return results with a decent similarity score
+                    if score > 0.4: 
+                        results.append(self.documents[idx])
+            
+            return results
+        except Exception as e:
+            logger.error(f"[RETRIEVER] Search failed: {e}")
+            return []
 
 # -----------------------------
-# SINGLETON (Strict Return Type)
+# SINGLETON ACCESS
 # -----------------------------
-_retriever_instance = None
+_instance = None
 
-def get_retriever(model_path: str, docs: List[str]):
-    global _retriever_instance
-    if _retriever_instance is None:
-        _retriever_instance = FaissRetriever(model_path, docs)
-    elif docs and len(docs) > len(_retriever_instance.documents):
-        _retriever_instance.rebuild_index(docs)
+def get_retriever(docs: Optional[List[str]] = None):
+    """
+    Ensures only one instance of the model and index is in memory.
+    """
+    global _instance
+    if _instance is None:
+        _instance = FaissRetriever(MODEL_NAME, docs)
+    return _instance
+
+# -----------------------------
+# TEST BLOCK
+# -----------------------------
+if __name__ == "__main__":
+    test_docs = [
+        "Use SimpleImputer with strategy='median' for numeric data with outliers.",
+        "OneHotEncoder is preferred for nominal categorical features.",
+        "StandardScaler should not be used on sparse data."
+    ]
     
-    # Returning the object itself (NOT a tuple) to match original expectation
-    return _retriever_instance
+    # Force rebuild for test
+    r = FaissRetriever(MODEL_NAME, test_docs)
+    res = r.retrieve("how to handle numeric outliers?")
+    print(f"Query Result: {res}")

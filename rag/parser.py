@@ -49,87 +49,158 @@ from core.exceptions import ParserError
 
 logger = get_logger(__name__)
 
-import re
+INVALID_COLUMNS = {
+    "DATASET", "TASK", "DISTRIBUTION", "FEATURE", 
+    "TARGET", "CARDINALITY", "VARIANCE", "END",
+    "GLOBAL", "FEATURES", "SUMMARY"
+}
+VALID_DECISIONS = {
+    "drop_column",
+    "impute_mean",
+    "impute_median",
+    "impute_mode",
+    "encode_onehot",
+    "normalize",
+    "standardize",
+    "keep"
+}
 
-def parse_report(report_text: str):
+def is_valid_column(col: str) -> bool:
     """
-    Parse dataset report into column metadata.
-
-    Returns:
-        List[dict] with:
-        - column
-        - dtype
-        - missing_percent
+    Balanced filter: removes structural noise without killing real columns
     """
+    if not col:
+        return False
 
-    columns = []
+    col_clean = col.strip()
 
-    # ---------------------------
-    # 1. Extract missing section
-    # ---------------------------
-    missing_section = re.search(
-        r"Missing by Column\n[-]+\n(.*?)\n\n",
-        report_text,
-        re.DOTALL
-    )
+    # Block known structural tokens only
+    if col_clean.upper() in INVALID_COLUMNS:
+        return False
+    
+    if len(col_clean) > 25:
+        return False
 
-    missing_data = {}
+    # Optional: block weird tokens (numbers-only, etc.)
+    if col_clean.isdigit():
+        return False
 
-    if missing_section:
-        content = missing_section.group(1).strip()
+    return True
+def parse_report(report_text: str, missing_map: Dict[str, int] = None, total_rows: int = None):
+    columns = {}
+    lines = report_text.splitlines()
 
-        if content.lower() != "none":
-            for line in content.split("\n"):
-                match = re.match(r"(.+?):\s*(\d+)%", line)
-                if match:
-                    col = match.group(1).strip()
-                    pct = int(match.group(2))
-                    missing_data[col] = pct
+    logger.info(f"[PARSER] Total lines: {len(lines)}")
 
-    # ---------------------------
-    # 2. Extract column types
-    # ---------------------------
-    type_section = re.search(
-        r"Column Types\n[-]+\n(.*?)\n\n",
-        report_text,
-        re.DOTALL
-    )
+    for i, line in enumerate(lines):
+        line = line.strip()
+        if not line:
+            continue
 
-    if not type_section:
-        return []
+        if "|" not in line:
+            continue
 
-    type_content = type_section.group(1)
+        logger.debug(f"[PARSER] Processing line {i}: {line}")
 
-    numeric_cols = []
-    categorical_cols = []
+        parts = [p.strip() for p in line.split("|")]
 
-    for line in type_content.split("\n"):
-        if "Numeric" in line:
-            numeric_cols = [c.strip() for c in line.split(":")[1].split(",")]
-        elif "Categorical" in line:
-            categorical_cols = [c.strip() for c in line.split(":")[1].split(",")]
+        # -----------------------------------
+        # 🧠 Extract column name (FIRST TOKEN)
+        # -----------------------------------
+        col_candidate = parts[0]
 
-    # ---------------------------
-    # 3. Build column objects
-    # ---------------------------
-    all_columns = []
+        # Clean patterns like: "TASK: regression"
+        col_candidate = col_candidate.split(":")[0].strip()
 
-    for col in numeric_cols:
-        all_columns.append({
+        if not is_valid_column(col_candidate):
+            logger.debug(f"[PARSER] ❌ Invalid column skipped: {col_candidate}")
+            continue
+
+        col = col_candidate
+        logger.debug(f"[PARSER] ✅ Column detected: {col}")
+
+        columns.setdefault(col, {})
+        columns[col]["column"] = col
+
+        # -----------------------------------
+        # 📊 Parse attributes from rest
+        # -----------------------------------
+        for part in parts[1:]:
+            part = part.lower()
+
+            # Skew
+            if "skew=" in part:
+                try:
+                    value = float(part.split("skew=")[1])
+                    columns[col]["skew"] = value
+                    logger.debug(f"[PARSER] {col} skew={value}")
+                except:
+                    logger.warning(f"[PARSER] Failed skew parse: {part}")
+
+            # Correlation
+            if "corr=" in part:
+                try:
+                    raw = part.split("corr=")[1]
+                    value = float(re.findall(r"-?\d+\.\d+", raw)[0])
+                    columns[col]["correlation"] = value
+                    columns[col]["high_target_corr"] = abs(value) > 0.7
+                    logger.debug(f"[PARSER] {col} corr={value}")
+                except:
+                    logger.warning(f"[PARSER] Failed corr parse: {part}")
+
+            # Binary
+            if "binary" in part:
+                columns[col]["dtype"] = "categorical"
+
+            # Ordinal
+            if "ordinal" in part:
+                columns[col]["dtype"] = "categorical"
+
+            # Cardinality hint
+            if "cardinality" in part:
+                columns[col]["dtype"] = "categorical"
+
+        # -----------------------------------
+        # 🧠 Default dtype fallback
+        # -----------------------------------
+        if "dtype" not in columns[col]:
+            columns[col]["dtype"] = "numeric"  # safe fallback
+
+    # -----------------------------------
+    # 📦 Final normalization
+    # -----------------------------------
+    parsed_columns = []
+
+    for col, data in columns.items():
+        missing_count = 0
+        missing_percent = 0.0
+
+        if missing_map and col in missing_map:
+            missing_count = missing_map[col]
+
+        if total_rows:
+            missing_percent = compute_missing_percent(missing_count, total_rows)
+
+        parsed_columns.append({
             "column": col,
-            "dtype": "numeric",
-            "missing_percent": missing_data.get(col, 0)
+            "dtype": data.get("dtype", "unknown"),
+            "missing_percent": missing_percent,
+            "skew": data.get("skew", 0),
+            "correlation": data.get("correlation", 0),
+            "high_target_corr": data.get("high_target_corr", False),
         })
 
-    for col in categorical_cols:
-        all_columns.append({
-            "column": col,
-            "dtype": "categorical",
-            "missing_percent": missing_data.get(col, 0)
-        })
+    # -----------------------------------
+    # 📊 Logging
+    # -----------------------------------
+    logger.info(f"[PARSER] Final column count: {len(parsed_columns)}")
 
-    return all_columns
+    if len(parsed_columns) == 0:
+        logger.error("[PARSER] ❌ No columns parsed — FORMAT mismatch")
+    else:
+        logger.debug(f"[PARSER] Columns parsed: {[c['column'] for c in parsed_columns]}")
 
+    return parsed_columns
 
 # -----------------------------
 # 🔍 HELPER FUNCTIONS
@@ -222,29 +293,24 @@ def compute_missing_percent(missing_count: int, total_rows: int) -> float:
     except Exception as e:
         logger.error(f"Error computing missing %: {str(e)}")
         return 0.0
-    
+
 def normalize_decision(decision: str) -> str:
     """
-    Normalize a raw decision string into a canonical preprocessing action.
-
-    Expected input: str
-    Output: str (one of predefined actions)
+    Normalize LLM output into strict preprocessing actions.
+    Enforces ENUM safety.
     """
 
-    # 🔒 Type Guard (fail fast)
     if not isinstance(decision, str):
-        logger.error(f"[NORMALIZE] Invalid type: expected str, got {type(decision)} | value={decision}")
-        raise TypeError(f"normalize_decision expects str, got {type(decision)}")
+        logger.error(f"[NORMALIZE] Invalid type: {type(decision)} | value={decision}")
+        return "keep"
 
-    original_decision = decision  # keep for logging
-
-    # 🔧 Normalize text
+    original = decision
     decision = decision.lower().strip()
 
-    logger.debug(f"[NORMALIZE] Raw: '{original_decision}' → Processed: '{decision}'")
+    logger.debug(f"[NORMALIZE] Raw: '{original}' → '{decision}'")
 
-    # 🎯 Mapping logic
-    if "drop" in decision:
+    # 🔒 Strict mapping
+    if any(k in decision for k in ["drop", "remove"]):
         result = "drop_column"
     elif "mean" in decision:
         result = "impute_mean"
@@ -252,15 +318,20 @@ def normalize_decision(decision: str) -> str:
         result = "impute_median"
     elif "mode" in decision:
         result = "impute_mode"
-    elif "encode" in decision:
+    elif "encode" in decision or "onehot" in decision:
         result = "encode_onehot"
     elif "normalize" in decision:
         result = "normalize"
-    elif "standardize" in decision:
+    elif "standardize" in decision or "scale" in decision:
         result = "standardize"
     else:
         result = "keep"
 
-    logger.info(f"[NORMALIZE] Final decision: '{result}' (from '{original_decision}')")
+    # 🛑 Final guard
+    if result not in VALID_DECISIONS:
+        logger.warning(f"[NORMALIZE] Invalid mapped decision: {result}, fallback to keep")
+        return "keep"
+
+    logger.info(f"[NORMALIZE] Final decision: '{result}' (from '{original}')")
 
     return result

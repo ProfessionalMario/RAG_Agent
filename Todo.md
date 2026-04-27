@@ -78,4 +78,28 @@ FINAL CLEAN CHUNKS → EMBEDDING → VECTOR STORE
 
 Things to mention in resume, 
 it not only uses docling for pdf parsing but also cleans them internally using wordninja ensuring the retrieved content is not a garbage. 
-Also its aware of the context in two way the entire project code is aware of its own code and it will be easier to understand the structure for llms on what the code does, also it builds context based on the report so that it answers contextually. 
+Also its aware of the context in two way the entire project code is aware of its own code and it will be easier to understand the structure for llms on what the code does, also it builds context based on the report so that it answers contextually. we smartly slice pdf sections and feed it to tbe system. Advanced Hashing and fingerprint logic, It doesn't just hash the file; it creates a fingerprint using PDF_PATH + size + mtime. it has safe validation layer in critic that prevents it from running dangerous commands into the server like rm. 
+
+
+FeatureApproach 1 (The PDF Path)Approach 2 (The Refined Brain)IntegrityHigh risk of "PDF artifacts" (broken tables, split sentences).Source-truth from the devs. Every character is intentional.Logic FlowLine-level stripping can accidentally delete context.Markdown Headers preserve the semantic hierarchy.ScalingHard to maintain as Scikit-Learn updates (2,600+ pages).Sparse-checkout makes it trivial to update the KB in seconds.NoiseYou had to manually strip RandomState and API noise.The .rst files separate Tutorials from API docs automatically.
+
+
+
+
+.
+├── core/
+│   ├── logger.py          # Your existing logger
+│   └── exceptions.py      # Custom error handling
+├── data/
+│   ├── scikit_theory.md   # The NEW "Supreme Court" of rules
+│   └── reports.txt        # The input from the Analyser
+├── rag/
+│   ├── parser.py          # Extracts metadata from reports.txt
+│   ├── query.py           # Converts metadata to Search Intents
+│   ├── retriever.py       # FAISS logic (Vector Search)
+│   ├── reasoning.py       # Gemma 3 interaction (The "Brain")
+│   └── critic.py          # Safety/Confidence validator
+        knowledge
+        pipeline
+├── storage/               # Created at runtime (FAISS index + Meta)
+└── main.py                # THE ORCHESTRATOR   

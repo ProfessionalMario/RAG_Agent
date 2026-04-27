@@ -394,160 +394,406 @@
 
 
 
+# import os
+# from core.logger import get_logger
+# from core.exceptions import ParserError
+
+# # RAG components
+# from rag.parser import parse_report, normalize_decision
+# from rag.query import build_query
+# from rag.retriever import get_retriever
+# from rag.reasoning import build_prompt, parse_llm_output
+# from rag.critic import review_decision
+# from rag.knowledge import ensure_knowledge_ready, load_chunks
+# from rag.reasoning import call_llm_with_fallback
+
+# logger = get_logger(__name__)
+
+# # -----------------------------
+# # GLOBAL INITIALIZATION
+# # -----------------------------
+# # 1. First, check if PDF/Text hashes changed and rebuild if necessary
+# ensure_knowledge_ready()
+
+# # 2. Load the actual chunks (from meta.pkl)
+# docs = load_chunks()
+
+# # 3. Get the retriever singleton (Automatically loads faiss.index)
+# retriever = get_retriever("BAAI/bge-small-en-v1.5", docs)
+
+# # -----------------------------
+# # HELPERS
+# # -----------------------------
+
+# def load_text_file(path: str) -> str:
+#     if not os.path.exists(path):
+#         raise ParserError(f"Report file not found: {path}")
+#     with open(path, "r", encoding="utf-8", errors="ignore") as f:
+#         return f.read()
+
+# def apply_guardrails(column_data):
+#     missing = column_data.get("missing_percent", 0)
+#     if missing == 0:
+#         return {"hint": "no_missing_values", "reason": "Column has no missing values"}
+#     if missing > 70:
+#         return {"hint": "drop_column", "reason": "Too many missing values (>70%)"}
+#     return None
+
+# def should_process_column(col: dict) -> bool:
+#     """Decide if a column actually needs LLM reasoning (Your original logic)"""
+#     missing = col.get("missing_percent", 0)
+#     dtype = col.get("dtype")
+#     # Skip clean numeric/categorical columns to save time/compute
+#     if missing == 0:
+#         return False
+#     return True
+
+# # -----------------------------
+# # MAIN PIPELINE LOGIC
+# # -----------------------------
+# def run_pipeline(report_path: str):
+#     try:
+#         logger.info("[PIPELINE] Starting orchestration for: %s", report_path)
+
+#         # 1. Load & Parse Report
+#         report_text = load_text_file(report_path)
+#         parsed_columns = parse_report(report_text)
+        
+#         final_results = []
+
+#         # 2. Process every column (No more should_process pre-filter)
+#         for column_data in parsed_columns:
+#             col_name = column_data.get("column", "unknown")
+#             logger.info(f"[PIPELINE] Processing column: {col_name}")
+#             column_data.pop('retriever', None)
+#             try:
+#                 # A. Guardrail Check (Hard-stop for drops/logic stops)
+#                 # This now acts as your primary filter
+#                 guardrail = apply_guardrails(column_data)
+#                 if guardrail:
+#                     hint = guardrail.get("hint", "")
+#                     if "drop" in hint:
+#                         final_results.append({
+#                             "column": col_name,
+#                             "decision": normalize_decision(hint),
+#                             "reason": guardrail.get("reason", "Guardrail trigger")
+#                         })
+#                         logger.info(f"[GUARDRAIL] Dropping {col_name}")
+#                         continue
+                    
+#                     # If guardrail says 'no_missing_values', we still continue 
+#                     # because your "better functions" will handle the nuance.
+#                     logger.debug(f"[GUARDRAIL] Informational hint: {hint}")
+
+#                 # B. Query & Retrieve
+#                 query = build_query(column_data)
+#                 retrieved_docs = retriever.retrieve(query, k=2)
+
+#                 # 3. FIX: Send only the prompt (string) to the LLM
+#                 prompt = build_prompt(column_data, retrieved_docs)
+#                 decision_raw = call_llm_with_fallback(prompt) # Inside call_llm, json is now just {model, prompt, stream}
+
+#                 # D. Parse & Normalize
+#                 parsed_output = parse_llm_output(decision_raw)
+#                 norm_decision = normalize_decision(parsed_output.get("decision", "keep"))
+
+#                 # E. Critic Review
+#                 final_decision = review_decision(
+#                     column_data,
+#                     retrieved_docs,
+#                     norm_decision,
+#                     retriever
+#                 )
+
+#                 if isinstance(final_decision, dict):
+#                     final_decision = final_decision.get("decision", norm_decision)
+
+#                 # F. Finalizing Result
+#                 final_results.append({
+#                     "column": col_name,
+#                     "query": query,
+#                     "decision": final_decision,
+#                     "reason": parsed_output.get("reason", "Decision derived from RAG context")
+#                 })
+
+#             except Exception as col_err:
+#                 logger.error(f"[PIPELINE] Column {col_name} failed: {col_err}")
+#                 final_results.append({
+#                     "column": col_name, 
+#                     "decision": "Error", 
+#                     "reason": str(col_err)
+#                 })
+
+#         # 3. Safety Fallback
+#         if not final_results:
+#             logger.warning("[PIPELINE] No results generated after processing all columns.")
+#             final_results.append({
+#                 "column": "System",
+#                 "decision": "None",
+#                 "reason": "Input report was empty or parsing failed."
+#             })
+
+#         return final_results
+
+#     except Exception as e:
+#         logger.exception(f"Pipeline Fatal Error: {e}")
+#         raise
+
+# # -----------------------------
+# # CLI ENTRYPOINT
+# # -----------------------------
+# if __name__ == "__main__":
+#     # This runs when you call 'python pipeline.py'
+#     report_to_process = "reports.txt"
+#     if os.path.exists(report_to_process):
+#         results = run_pipeline(report_to_process)
+#         for r in results:
+#             print(f"\nCOLUMN: {r['column']}\nDECISION: {r['decision']}")
+#     else:
+#         print(f"Error: {report_to_process} not found.")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import json
+from tabulate import tabulate # Optional: pip install tabulate for pretty printing
 import os
+from typing import List, Dict
 from core.logger import get_logger
 from core.exceptions import ParserError
 
-# RAG components
+# RAG Component Imports
 from rag.parser import parse_report, normalize_decision
 from rag.query import build_query
 from rag.retriever import get_retriever
-from rag.reasoning import build_prompt, parse_llm_output
+from rag.reasoning import build_prompt, call_llm_with_fallback, parse_llm_output
 from rag.critic import review_decision
 from rag.knowledge import ensure_knowledge_ready, load_chunks
-from rag.reasoning import call_llm_with_fallback
 
 logger = get_logger(__name__)
 
 # -----------------------------
-# GLOBAL INITIALIZATION
+# GLOBAL INIT
 # -----------------------------
-# 1. First, check if PDF/Text hashes changed and rebuild if necessary
+# Ensure index is ready and singleton retriever is active before any calls
 ensure_knowledge_ready()
-
-# 2. Load the actual chunks (from meta.pkl)
-docs = load_chunks()
-
-# 3. Get the retriever singleton (Automatically loads faiss.index)
-retriever = get_retriever("BAAI/bge-small-en-v1.5", docs)
+retriever = get_retriever(load_chunks())
 
 # -----------------------------
-# HELPERS
+# CORE LOGIC UNITS
 # -----------------------------
 
 def load_text_file(path: str) -> str:
+    """Read the senior analyst report."""
     if not os.path.exists(path):
-        raise ParserError(f"Report file not found: {path}")
+        raise FileNotFoundError(f"Report file missing: {path}")
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
         return f.read()
 
-def apply_guardrails(column_data):
+# def should_process_column(col_data: Dict) -> bool:
+#     dtype = str(col_data.get("dtype", "unknown")).lower()
+#     missing = col_data.get("missing_percent", 0)
+#     skew = abs(col_data.get("skew", 0))
+#     unique_count = col_data.get("unique_count", 999) # Add this to your parser!
+
+#     if missing > 0: return True
+#     if dtype in ["object", "category", "string"]: return True
+    
+#     # NEW: If it's numeric but has very few unique values, 
+#     # it's likely a categorical encoded as an int. PROCESS IT.
+#     if unique_count < 10: 
+#         return True
+
+#     if dtype in ["numeric", "int", "float"] and skew > 1.0: return True
+
+#     return False
+
+
+def is_clean_numeric(col_data: Dict) -> bool:
+    """
+    Returns True ONLY if the column is numeric, complete, and balanced.
+    If it fails any check, it returns False and triggers the RAG flow.
+    """
+    dtype = str(col_data.get("dtype", "unknown")).lower()
+    missing = col_data.get("missing_percent", 0)
+    # Use 0 as default for skew if missing
+    skew = abs(col_data.get("skew", 0))
+    # If your parser doesn't provide unique_count yet, default to 999
+    unique_count = col_data.get("unique_count", 999)
+
+    # 1. Numeric check
+    is_num = any(n in dtype for n in ['numeric', 'int', 'float'])
+    
+    # 2. Skip criteria: Numeric AND no missing AND low skew AND high cardinality
+    if is_num and missing == 0 and skew < 1.0 and unique_count >= 10:
+        return True
+        
+    return False
+
+
+def apply_guardrails(column_data: Dict) -> Dict:
+    """
+    Hard-coded statistical safety checks.
+    Returns a hint dict if a guardrail triggers, else None.
+    """
     missing = column_data.get("missing_percent", 0)
-    if missing == 0:
-        return {"hint": "no_missing_values", "reason": "Column has no missing values"}
+    
     if missing > 70:
-        return {"hint": "drop_column", "reason": "Too many missing values (>70%)"}
+        return {
+            "hint": "drop_column", 
+            "reason": f"Missingness ({missing}%) exceeds 70% threshold."
+        }
+    
+    if missing == 0:
+        # We don't stop here, but we pass a hint to the LLM via the pipeline
+        return {"hint": "no_missing_values", "reason": "Data is complete."}
+        
     return None
 
-def should_process_column(col: dict) -> bool:
-    """Decide if a column actually needs LLM reasoning (Your original logic)"""
-    missing = col.get("missing_percent", 0)
-    dtype = col.get("dtype")
-    # Skip clean numeric/categorical columns to save time/compute
-    if missing == 0:
-        return False
-    return True
 
-# -----------------------------
-# MAIN PIPELINE LOGIC
-# -----------------------------
-def run_pipeline(report_path: str):
+
+def run_query(query: str) -> str:
     try:
-        logger.info("[PIPELINE] Starting orchestration for: %s", report_path)
+        logger.info(f"Query received: {query}")
+        ensure_knowledge_ready()
+        docs = load_chunks()
 
-        # 1. Load & Parse Report
-        report_text = load_text_file(report_path)
-        parsed_columns = parse_report(report_text)
-        
-        final_results = []
 
-        # 2. Process every column (No more should_process pre-filter)
-        for column_data in parsed_columns:
-            col_name = column_data.get("column", "unknown")
-            logger.info(f"[PIPELINE] Processing column: {col_name}")
-            column_data.pop('retriever', None)
-            try:
-                # A. Guardrail Check (Hard-stop for drops/logic stops)
-                # This now acts as your primary filter
-                guardrail = apply_guardrails(column_data)
-                if guardrail:
-                    hint = guardrail.get("hint", "")
-                    if "drop" in hint:
-                        final_results.append({
-                            "column": col_name,
-                            "decision": normalize_decision(hint),
-                            "reason": guardrail.get("reason", "Guardrail trigger")
-                        })
-                        logger.info(f"[GUARDRAIL] Dropping {col_name}")
-                        continue
-                    
-                    # If guardrail says 'no_missing_values', we still continue 
-                    # because your "better functions" will handle the nuance.
-                    logger.debug(f"[GUARDRAIL] Informational hint: {hint}")
+        results = retriever.retrieve(query, k=3)
 
-                # B. Query & Retrieve
-                query = build_query(column_data)
-                retrieved_docs = retriever.retrieve(query, k=2)
+        if not results:
+            return "No relevant knowledge found."
 
-                # 3. FIX: Send only the prompt (string) to the LLM
-                prompt = build_prompt(column_data, retrieved_docs)
-                decision_raw = call_llm_with_fallback(prompt) # Inside call_llm, json is now just {model, prompt, stream}
-
-                # D. Parse & Normalize
-                parsed_output = parse_llm_output(decision_raw)
-                norm_decision = normalize_decision(parsed_output.get("decision", "keep"))
-
-                # E. Critic Review
-                final_decision = review_decision(
-                    column_data,
-                    retrieved_docs,
-                    norm_decision,
-                    retriever
-                )
-
-                if isinstance(final_decision, dict):
-                    final_decision = final_decision.get("decision", norm_decision)
-
-                # F. Finalizing Result
-                final_results.append({
-                    "column": col_name,
-                    "query": query,
-                    "decision": final_decision,
-                    "reason": parsed_output.get("reason", "Decision derived from RAG context")
-                })
-
-            except Exception as col_err:
-                logger.error(f"[PIPELINE] Column {col_name} failed: {col_err}")
-                final_results.append({
-                    "column": col_name, 
-                    "decision": "Error", 
-                    "reason": str(col_err)
-                })
-
-        # 3. Safety Fallback
-        if not final_results:
-            logger.warning("[PIPELINE] No results generated after processing all columns.")
-            final_results.append({
-                "column": "System",
-                "decision": "None",
-                "reason": "Input report was empty or parsing failed."
-            })
-
-        return final_results
+        return "\n".join(results)
 
     except Exception as e:
-        logger.exception(f"Pipeline Fatal Error: {e}")
-        raise
+        logger.exception("Query failed")
 
-# -----------------------------
-# CLI ENTRYPOINT
-# -----------------------------
-if __name__ == "__main__":
-    # This runs when you call 'python pipeline.py'
-    report_to_process = "reports.txt"
-    if os.path.exists(report_to_process):
-        results = run_pipeline(report_to_process)
-        for r in results:
-            print(f"\nCOLUMN: {r['column']}\nDECISION: {r['decision']}")
-    else:
-        print(f"Error: {report_to_process} not found.")
+        return "System temporarily failed to process query."
+
+def safe_run_pipeline(report_path: str):
+    try:
+        print("\n[DEBUG] Pipeline started")
+        return run_pipeline(report_path)
+
+    except FileNotFoundError:
+        return [{
+            "column": "N/A",
+            "decision": "Error: Report file not found\nReason: Please provide valid path"
+        }]
+
+    except Exception as e:
+        return [{
+            "column": "N/A",
+            "decision": f"Error: Pipeline failed\nReason: {str(e)}"
+        }]
+def run_pipeline(report_path: str) -> List[Dict]:
+    """
+    Refactored Orchestrator: 
+    No more 'guessing'—if it's not perfect, it goes to RAG.
+    """
+    logger.info(f"🚀 [PIPELINE] Starting orchestration: {report_path}")
+    
+    report_text = load_text_file(report_path)
+    parsed_columns = parse_report(report_text)
+    logger.info(f"[PARSER] Total columns parsed: {len(parsed_columns)}")
+    logger.debug(f"[PARSER] Columns: {[c['column'] for c in parsed_columns]}")
+    
+    final_results = []
+
+    for col_data in parsed_columns:
+        name = col_data.get("column", "unknown")
+        
+        try:
+            # 1. Check if we can skip
+            if is_clean_numeric(col_data) and not col_data.get("high_target_corr", False):
+                final_results.append({
+                    "column": name,
+                    "decision": "Keep (No Action)",
+                    "reason": "Meets baseline: Numeric, no missing values, low skew."
+                })
+                continue 
+
+            # 2. Generator Logic
+            query = build_query(col_data)
+            context = retriever.retrieve(query, k=3)
+            prompt = build_prompt(col_data, context)
+            
+            raw_output = call_llm_with_fallback(prompt)
+            parsed_gen = parse_llm_output(raw_output)
+
+            # Create the initial record
+            record = {
+                "column": name,
+                "decision": parsed_gen.get("decision", "Keep"),
+                "reason": parsed_gen.get("reason", "RAG reasoning.")
+            }
+
+            # 3. Critic Logic (The Git Patch)
+            # This edits 'record' directly
+            review_decision(record, context)
+
+            # 4. Save the single, merged result
+            final_results.append(record)
+
+        except Exception as e:
+            logger.error(f"Failed {name}: {e}")
+    return final_results
+
+

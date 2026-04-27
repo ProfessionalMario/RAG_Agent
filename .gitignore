@@ -12,6 +12,9 @@ RAG_Env/
 venv/
 env/
 .venv/
+data/
+doc/
+experiment/
 
 # -----------------------------
 # 🔐 Environment & Secrets
@@ -46,6 +49,8 @@ storage
 # -----------------------------
 storage/logs/
 *.log
+total_context/
+ui/
 
 
 # -----------------------------
@@ -58,6 +63,7 @@ Thumbs.db
 
 # VSCode
 .vscode/
+
 
 # -----------------------------
 # 📁 Temporary / Outputs

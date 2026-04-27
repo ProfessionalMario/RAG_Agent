@@ -1,128 +1,160 @@
-
-
-from rag.pipeline import safe_run_pipeline, run_query
-from core.logger import get_logger
-import logging
 import os
 import time
 import threading
 import itertools
 import sys
-logger = get_logger(__name__)
-
-# 🔒 Suppress ONLY console noise (keep file logging intact)
-# for handler in logger.handlers:
-#     if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
-#         handler.setLevel(logging.ERROR)
-
-# 🔇 Disable transformers + HF noise
+import logging
+# from debugflow import flow_engine
+# Suppress library noise BEFORE imports
 os.environ["TRANSFORMERS_VERBOSITY"] = "error"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
-# 🔇 Disable tqdm progress bars globally
 os.environ["DISABLE_TQDM"] = "1"
 
-# 🔇 Suppress library loggers
+from rag.pipeline import safe_run_pipeline, run_query
+from core.logger import get_logger
+
+logger = get_logger(__name__)
+
+# Standardize Logging
 logging.getLogger("transformers").setLevel(logging.ERROR)
 logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
+logging.getLogger("httpx").setLevel(logging.WARNING) 
+
+# Hardcoded Default Path
+DEFAULT_REPORT = "data/pdfs/reports.txt"
+
+# -----------------------------
+# UX UTILITIES
+# -----------------------------
 
 def cli_notify(msg: str):
-    """Minimal live update printed to terminal"""
-    print(f"> {msg}", flush=True)
+    print(f"\n> {msg}", flush=True)
 
-def spinner(msg="Processing"):
-    stop_event = threading.Event()
+class CLI_Spinner:
+    def __init__(self, msg="Processing"):
+        self.msg = msg
+        self.stop_event = threading.Event()
+        self.thread = threading.Thread(target=self._animate)
 
-    def run():
+    def _animate(self):
         for c in itertools.cycle(["|", "/", "-", "\\"]):
-            if stop_event.is_set():
+            if self.stop_event.is_set():
                 break
-            sys.stdout.write(f"\r> {msg}... {c}")
+            sys.stdout.write(f"\r> {self.msg}... {c} ")
             sys.stdout.flush()
             time.sleep(0.1)
+        sys.stdout.write("\r" + " " * (len(self.msg) + 10) + "\r")
 
-    t = threading.Thread(target=run)
-    t.start()
+    def start(self):
+        self.thread.start()
 
-    return stop_event
+    def stop(self):
+        self.stop_event.set()
+        if self.thread.is_alive():
+            self.thread.join()
+
+# -----------------------------
+# MODE: PIPELINE
+# -----------------------------
 
 def display_results(results):
-    """Formatted final results"""
+    print("\n" + "╔" + "═" * 58 + "╗")
+    print("║" + " FINAL PREPROCESSING STRATEGY ".center(58) + "║")
+    print("╚" + "═" * 58 + "╝")
+
     for r in results:
-        print("\n" + "=" * 40)
-        print(f"Column: {r.get('column', 'N/A')}")
-        print("-" * 40)
+        col = r.get('column', 'N/A').upper()
+        print(f"\n◈ COLUMN: {col}")
+        print(f"  ├─ DECISION: {r.get('decision', 'N/A')}")
+        print(f"  └─ REASON:   {r.get('reason', 'N/A')}")
 
-        decision = r.get("decision", "No decision")
-        for line in decision.split("\n"):
-            print(line.strip())
-
-    print("\n" + "=" * 40)
-
+    print("\n" + "═" * 60)
 
 def run_pipeline_cli():
-    """Run the EDA pipeline with clean UX"""
-    path = input("Enter report path: ").strip()
+    """UX wrapper using hardcoded reports.txt path."""
+    if not os.path.exists(DEFAULT_REPORT):
+        print(f"❌ Error: Report not found at {DEFAULT_REPORT}")
+        return
 
-    cli_notify(f"Starting pipeline for: {path}")
-    start = time.time()
+    cli_notify(f"Analyzing: {DEFAULT_REPORT}")
+    spinner = CLI_Spinner("Running RAG Pipeline")
+    
     try:
-        cli_notify("Parsing report...")
-        t1 = time.time()
-        stop_event = spinner("Running pipeline")
-        results = safe_run_pipeline(path)
+        spinner.start()
+        # Using safe_run_pipeline as re-enabled in your pipeline.py
+        results = safe_run_pipeline(DEFAULT_REPORT)
+        # cli_notify(results)
+        spinner.stop()
 
-        cli_notify("Pipeline finished. Preparing final summary...")
         display_results(results)
-        stop_event.set()
-        print("\r> Pipeline completed!     ")
-
-        # cli_notify("Done.")
-
-    except FileNotFoundError:
-        logger.exception(f"Report not found: {path}")
-        print(f"Error: Report file not found at {path}")
+        cli_notify("Task Completed.")
 
     except Exception as e:
-        logger.exception(f"Pipeline failed: {str(e)}")
-        print(f"Error: Pipeline execution failed")
+        spinner.stop()
+        logger.exception(f"Pipeline failed: {e}")
+        print(f"\n❌ Error: Pipeline execution failed.")
 
+# -----------------------------
+# MODE: LIVE QUERY
+# -----------------------------
 
 def run_query_cli():
-    """Run live query mode"""
-    cli_notify("Query mode: ask anything (type 'exit' to quit)")
+    cli_notify("KNOWLEDGE MODE: Ask technical Scikit-Learn questions.")
+    print("   (Type 'exit' to return to menu)")
 
     while True:
-        q = input("\nAsk: ").strip()
+        q = input("\n❓ Question: ").strip()
 
-        if q.lower() == "exit":
-            cli_notify("Exiting query mode.")
+        if q.lower() in ["exit", "quit"]:
             break
 
+        if not q:
+            continue
+
+        spinner = CLI_Spinner("Searching Knowledge Base")
         try:
-            cli_notify("Thinking...")
+            spinner.start()
+            # Using run_query as re-enabled in your pipeline.py
             ans = run_query(q)
-            print("\nAnswer:", ans)
+            spinner.stop()
+            
+            print(f"\n📖 CONTEXTUAL ANSWER:\n{ans}")
 
         except Exception as e:
-            logger.exception(f"Query failed: {str(e)}")
-            print("Error: Could not process query.")
+            spinner.stop()
+            logger.error(f"Query failed: {e}")
+            print("❌ Error: Could not retrieve answer.")
 
+# -----------------------------
+# MAIN ENTRY
+# -----------------------------
 
 def main():
-    print("\nSelect Mode:")
-    print("1. Pipeline (EDA report)")
-    print("2. Query (Ask anything)")
+    print("\n" + "█" * 40)
+    print("   RAG-ML PREPROCESSING ENGINE   ")
+    print("█" * 40)
 
-    choice = input("Enter choice (1/2): ").strip()
+    while True:
+        print("\n[1] Run Pipeline (Analyze reports)")
+        print("[2] Live Query (Ask Knowledge Base)")
+        print("[3] Exit")
 
-    if choice == "1":
-        run_pipeline_cli()
-    elif choice == "2":
-        run_query_cli()
-    else:
-        print("Invalid choice")
+        choice = input("\nSelection: ").strip()
 
+        if choice == "1":
+            run_pipeline_cli()
+        elif choice == "2":
+            run_query_cli()
+        elif choice == "3":
+            print("Goodbye!")
+            break
+        else:
+            print("Invalid choice.")
 
 if __name__ == "__main__":
-    main()
+    try:
+        # flow_engine.launch("main",Ghśost=True,Real_Time=True)
+        main()
+    except KeyboardInterrupt:
+        print("\n\nSession ended.")
+        sys.exit(0)

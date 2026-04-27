@@ -1,51 +1,3 @@
-"""
-LLM Reasoning Module – Developer Guide
-
-Generates preprocessing decisions using a local LLM (Ollama + RAG).
-
---------------------------------------------------------------------------------
-Purpose:
---------------------------------------------------------------------------------
-- Build structured prompts from column metadata and retrieved docs
-- Send prompt to local LLM via Ollama API
-- Return concise, structured decision
-- Fallback: log errors and return message if LLM fails
-
---------------------------------------------------------------------------------
-Flow:
---------------------------------------------------------------------------------
-Column Data + Retrieved Docs
-        ↓
-   build_prompt()
-        ↓
-   call_llm()
-        ↓
-Decision + Reason
-
---------------------------------------------------------------------------------
-Callable Functions:
---------------------------------------------------------------------------------
-build_prompt(column_data: dict, retrieved_docs: list) -> str
-    - Creates a structured LLM prompt from input data
-    - Ensures rules, format, and safe fallback
-
-call_llm(prompt: str) -> str
-    - Sends prompt to Ollama LLM
-    - Returns LLM-generated decision + reason
-    - Handles errors and logs failures
-
---------------------------------------------------------------------------------
-Usage Example:
---------------------------------------------------------------------------------
-from rag.reasoning import build_prompt, call_llm
-
-prompt = build_prompt(column_data, retrieved_docs)
-decision = call_llm(prompt)
-
-print(decision)  
-# "Decision: Use median imputation
-#  Reason: Numeric column with moderate missing values and likely skewed distribution"
-"""
 
 import requests
 from typing import List, Dict
@@ -53,46 +5,76 @@ from core.logger import get_logger
 
 logger = get_logger(__name__)
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "gemma3:1b"  
+# -----------------------------
+# CONFIG
+# -----------------------------
+OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
+MODEL_NAME = "gemma3:4b"  # Optimized for speed/deterministic logic
 
 def build_prompt(column_data: Dict, retrieved_docs: List[str]) -> str:
     """Build structured prompt for the LLM using RAG context."""
     col = column_data.get("column", "Unknown")
     dtype = column_data.get("dtype", "Unknown")
     missing = round(column_data.get("missing_percent", 0))
-    
-    # Format knowledge into a bulleted list
-    knowledge = "\n".join(f"- {doc}" for doc in retrieved_docs) if retrieved_docs else "No specific domain knowledge found."
+    skew = column_data.get("skew", 0)
+    task = column_data.get("task", "unknown")  # regression / classification
+    sample_size = column_data.get("sample_size", "unknown")  # small / large
+    cardinality = column_data.get("cardinality", "unknown")  # low / high
+    outliers = column_data.get("outliers", "unknown")  # present / none
+    variance = column_data.get("variance", "unknown")
+    clean_knowledge = []
+    # Do it in one pass
+    if retrieved_docs:
+        knowledge = "\n".join(f"- [DOC REFERENCE]: {doc}" for doc in retrieved_docs)
+    else:
+        knowledge = "No specific scikit-learn documentation found."
 
     prompt = f"""
-You are a senior ML engineer specializing in data preprocessing.
+You are a Senior ML Engineer. Your goal is to choose a Scikit-Learn preprocessing strategy.
 
-CONTEXT FROM DOCUMENTATION:
+IMPORTANT:
+- Treat EACH request as completely independent.
+- Do NOT assume information from previous datasets.
+- Use ONLY the provided KNOWLEDGE and COLUMN PROFILE.
+- If knowledge is weak or missing, fall back to safe, standard preprocessing practices.
+
+SCIKIT-LEARN KNOWLEDGE:
 {knowledge}
 
-TARGET COLUMN:
+COLUMN PROFILE:
 - Name: {col}
 - Data Type: {dtype}
 - Missing Values: {missing}%
+- Skewness: {skew}
+
+ADDITIONAL CONTEXT (if available):
+- Task Type: {task}
+- Sample Size: {sample_size}
+- Cardinality: {cardinality}
+- Outliers: {outliers}
+- Variance: {variance}
 
 TASK:
-Determine the best preprocessing action (e.g., mean imputation, median imputation, mode imputation, drop, or keep).
-If the provided context suggests a specific business rule for this column, follow it. 
-Otherwise, use standard ML best practices.
+Based ONLY on the COLUMN PROFILE ({col}), select the transformer.
+    IGNORE column names mentioned in the [DOC REFERENCE] section; they are EXAMPLES only.
+Focus on:
+- Correct handling of missing values
+- Proper encoding for categorical data
+- Transformations for skewed data
+- Whether scaling is required or unnecessary
+- Avoiding overfitting for small datasets
 
-OUTPUT FORMAT (Strict):
-Decision: <action>
-Reason: <brief justification>
+OUTPUT FORMAT (STRICT):
+Decision: <Scikit-Learn Class and strategy>
+Reason: <Brief technical justification>
 """
+    logger.debug(f"[PROMPT BUILDER] Built prompt for column: {col}")
     return prompt.strip()
 
 def call_llm_with_fallback(prompt: str, model_name: str = MODEL_NAME) -> str:
-    """
-    Pure LLM call. Does one thing: Talks to Ollama.
-    """
+    """Sends prompt to Ollama and handles connection failures."""
     try:
-        logger.info(f"Sending prompt to Ollama ({model_name})")
+        logger.info(f"🧠 [REASONING] Calling Ollama ({model_name})...")
         
         response = requests.post(
             OLLAMA_URL,
@@ -101,16 +83,16 @@ def call_llm_with_fallback(prompt: str, model_name: str = MODEL_NAME) -> str:
                 "prompt": prompt,
                 "stream": False,
                 "options": {
-                    "temperature": 0.1,  # Keep it deterministic
-                    "num_predict": 100   # Keep it concise
+                    "temperature": 0.0,  # Zero randomness for statistical consistency
+                    "num_predict": 120   # Enough for a clear reason
                 }
             },
-            timeout=60
+            timeout=45
         )
         
         if response.status_code != 200:
             logger.error(f"Ollama error {response.status_code}: {response.text}")
-            return "Decision: keep\nReason: LLM service error"
+            return "Decision: SimpleImputer(strategy='median')\nReason: LLM service error fallback"
 
         result = response.json().get("response", "")
         return result.strip()
@@ -120,21 +102,45 @@ def call_llm_with_fallback(prompt: str, model_name: str = MODEL_NAME) -> str:
         return "Decision: keep\nReason: LLM connection timeout"
 
 def parse_llm_output(output: str) -> Dict[str, str]:
-    """Extracts Decision and Reason from LLM text."""
+    """Extracts Decision and Reason from LLM text using strict splitting."""
     decision = "keep"
     reason = "Fallback applied"
 
     if not output:
         return {"decision": decision, "reason": reason}
 
-    lines = output.split("\n")
-    for line in lines:
-        if line.lower().startswith("decision:"):
-            decision = line.split(":", 1)[1].strip()
-        elif line.lower().startswith("reason:"):
-            reason = line.split(":", 1)[1].strip()
+    try:
+        lines = output.split("\n")
+        for line in lines:
+            if ":" in line:
+                key, val = line.split(":", 1)
+                if "decision" in key.lower():
+                    decision = val.strip()
+                elif "reason" in key.lower():
+                    reason = val.strip()
+        
+        return {"decision": decision, "reason": reason}
+    except Exception as e:
+        logger.warning(f"Failed to parse LLM output: {e}")
+        return {"decision": decision, "reason": reason}
 
-    return {
-        "decision": decision,
-        "reason": reason
+# -----------------------------
+# TEST BLOCK
+# -----------------------------
+if __name__ == "__main__":
+    test_col = {
+        "column": "Age",
+        "dtype": "numeric",
+        "missing_percent": 15,
+        "skew": 2.5
     }
+    test_docs = ["For skewed data, use median imputation via SimpleImputer.", 
+                 "Apply PowerTransformer for variables with skewness > 1."]
+    
+    print("--- Testing Reasoning Module ---")
+    prompt = build_prompt(test_col, test_docs)
+    raw = call_llm_with_fallback(prompt)
+    parsed = parse_llm_output(raw)
+    
+    print(f"RAW OUTPUT:\n{raw}\n")
+    print(f"PARSED RESULT: {parsed}")
