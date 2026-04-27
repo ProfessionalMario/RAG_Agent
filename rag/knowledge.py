@@ -1,489 +1,165 @@
-
-
-# import os
-# import re
-# import faiss
-# import pickle
-# import numpy as np
-# from nltk.tokenize import sent_tokenize
-# from sentence_transformers import SentenceTransformer
-# from pathlib import Path
-# from extractor.pdf_parsing import PDFParser  # your module
-# import nltk
-# from core.logger import get_logger
-# from core.exceptions import ParserError
-# from typing import List
-# import os
-# import pickle
-# from typing import List
-# from rag.retriever import FAISS_DIR, DOCS_PATH, INDEX_PATH
-# from rag.retriever import FaissRetriever, get_model
-# from extractor.sentence_rebuilder import rebuild_sentences
-# from extractor.text_cleaner import normalize, remove_tables, is_valid_chunk
-# from extractor.chunker import generate_extraction_chunks,debug_retrieval_chunks
-# logger = get_logger(__name__)
-# # -----------------------------
-# # CONFIG
-# # -----------------------------
-# PDF_PATH = "data/pdfs/scikit.pdf"
-# TMP_MD_PATH = "output2.md"
-# STORAGE_DIR = Path("storage")
-# INDEX_PATH = STORAGE_DIR / "faiss.index"
-# # META_PATH = STORAGE_DIR / "meta.pkl"
-# CHUNK_SIZE = 150
-# CHUNK_OVERLAP = 30
-# # MODEL_NAME = "all-MiniLM-L6-v2"
-# MODEL_NAME = "BAAI/bge-small-en-v1.5"
-
-# STORAGE_DIR.mkdir(exist_ok=True)
-# nltk.download('punkt')
-
-# import hashlib
-
-# # -----------------------------
-# # 1️⃣ Load saved knowledge chunks
-# # -----------------------------
-# def load_chunks() -> List[str]:
-#     if not os.path.exists(DOCS_PATH):
-#         return []
-
-#     # 🚨 Critical fix: check empty file
-#     if os.path.getsize(DOCS_PATH) == 0:
-#         logger.warning("[LOAD CHUNKS] Empty file detected. Deleting...")
-#         os.remove(DOCS_PATH)
-#         return []
-
-#     try:
-#         with open(DOCS_PATH, "rb") as f:
-#             data = pickle.load(f)
-#             logger.info(f"[VERIFY] DOCS_PATH size: {os.path.getsize(DOCS_PATH)} bytes")
-#             if isinstance(data, list):
-#                 return data
-#             elif isinstance(data, dict) and "chunks" in data:
-#                 return data["chunks"]
-#             else:
-#                 return []
-
-#     except Exception as e:
-#         logger.warning(f"[LOAD CHUNKS FAILED] {e}")
-
-#         # 🚨 Auto-recovery
-#         os.remove(DOCS_PATH)
-#         logger.warning("[LOAD CHUNKS] Corrupted file deleted")
-
-#         return []
-
-# # -----------------------------
-# # 2️⃣ Ensure knowledge is ready
-# # -----------------------------
-# def ensure_knowledge_ready():
-#     """
-#     Ensure FAISS index + chunks exist.
-#     If missing → build from PDF pipeline.
-#     """
-
-#     index_exists = os.path.exists(INDEX_PATH)
-#     docs_exists = os.path.exists(DOCS_PATH)
-
-#     if index_exists and docs_exists and load_chunks():
-#         logger.info("[KNOWLEDGE] FAISS + chunks already exist. Skipping rebuild.")
-#         return
-
-#     logger.warning("[KNOWLEDGE] Missing index or docs. Building knowledge base...")
-
-#     # 🚀 Call your real pipeline
-#     main()
-
-
-# def compute_hash(text: str, config: dict) -> str:
-#     combined = text + str(config)
-#     return hashlib.sha256(combined.encode("utf-8")).hexdigest()
-
-# import hashlib
-
-# CONFIG = {
-#     "model": MODEL_NAME,
-#     "chunk_size": CHUNK_SIZE,
-#     "overlap": CHUNK_OVERLAP,
-#     "clean_version": "v1.0"
-# }
-
-# HASH_PATH = "storage/index.hash"
-
-# def save_hash(hash_val: str):
-#     with open(HASH_PATH, "w") as f:
-#         f.write(hash_val)
-
-# def load_hash():
-#     import os
-#     if not os.path.exists(HASH_PATH):
-#         return None
-#     return open(HASH_PATH).read().strip()
-
-# # ==============================
-# # RAG CORE PIPELINE
-# # ==============================
-
-# def build_faiss_index(chunks: list, model_name: str = MODEL_NAME):
-#     model = SentenceTransformer(model_name)
-#     embeddings = model.encode(chunks, show_progress_bar=True)
-#     embeddings = np.array(embeddings).astype("float32")
-#     dim = embeddings.shape[1]
-
-#     index = faiss.IndexFlatL2(dim)
-#     index.add(embeddings)
-#     # os.makedirs(STORAGE_DIR, exist_ok=True)
-#     logger.info(f"[FAISS BUILD] Total chunks: {len(chunks)}")
-#     logger.debug(f"[FAISS SAMPLE] {chunks[:2]}")
-#     STORAGE_DIR.mkdir(exist_ok=True)
-#     faiss.write_index(index, str(INDEX_PATH))
-#     with open(DOCS_PATH, "wb") as f:
-#         pickle.dump(chunks, f)
-
-#     print(f"[INFO] FAISS index saved at {INDEX_PATH}")
-#     return index
-
-# # ==============================
-# # FULL PIPELINE CALL
-# # ==============================
-# def peek_chunks(chunks, sample_size=3):
-#     """
-#     Diagnostic tool to verify chunk quality without memory overhead.
-#     """
-#     if not chunks:
-#         print("\n[!] TEST FAILED: No chunks found.")
-#         return
-
-#     print(f"\n--- SURGICAL CHUNK DIAGNOSTIC (Total: {len(chunks)}) ---")
-    
-#     # Check first, middle, and last to ensure consistency
-#     indices = [0, len(chunks) // 2, len(chunks) - 1]
-    
-#     for i in indices:
-#         if i < len(chunks):
-#             print(f"\n[CHUNK #{i}]")
-#             print(f"Length: {len(chunks[i])} chars")
-#             # Print a snippet of the chunk
-#             print(f"Content: {chunks[i][:300]}...") 
-#             print("-" * 30)
-
-# def inspect_pipeline_quality(chunks, num_samples=3):
-#     """
-#     Surgically inspects chunks to ensure cleaning and windowing logic 
-#     is producing high-quality retrieval candidates.
-#     """
-#     if not chunks:
-#         print("\n[!] CRITICAL: No chunks found. Pipeline is broken.")
-#         return
-
-#     total = len(chunks)
-#     # Pick start, middle, and end indices to see variety
-#     sample_indices = [0, total // 2, total - 1] if total > 2 else range(total)
-
-#     print(f"\n{'='*60}")
-#     print(f"📊 PIPELINE INSPECTION: {total} Total Chunks Generated")
-#     print(f"{'='*60}")
-
-#     for idx in sample_indices:
-#         chunk = chunks[idx]
-#         print(f"\n[SAMPLE CHUNK #{idx}]")
-#         print(f"📏 Size: {len(chunk)} characters")
-#         print(f"📝 Preview: {chunk[:400]}...") # First 400 chars
-#         print(f"{'-'*30}")
-    
-#     print("\n[VERIFICATION CHECKLIST]")
-#     print("1. Glued words? (e.g. 'theprocess') -> If yes, wordninja failed.")
-#     print("2. Tables? (e.g. '|---|') -> If yes, remove_tables failed.")
-#     print("3. Cutoffs? -> Check if sentences end abruptly or flow logically.")
-#     print(f"{'='*60}\n")
-
-
-# def main():
-#     # 1. LIGHTWEIGHT HASH CHECK (Zero Memory Footprint)
-#     # Get file stats (size and last modified time) to create a quick fingerprint
-#     file_stats = os.stat(PDF_PATH)
-#     current_fingerprint = f"{PDF_PATH}_{file_stats.st_size}_{file_stats.st_mtime}"
-    
-#     stored_hash = load_hash() # Adjust load_hash to handle this string or its hash
-
-#     if current_fingerprint == stored_hash:
-#         print("[INFO] Source file unchanged. Skipping heavy processing.")
-#         return
-
-#     # 2. Extraction & Refining (The memory-heavy part)
-#     parser = PDFParser(pdf_path=PDF_PATH, chunk_pages=10)
-#     parsed_data = parser.parse() 
-    
-#     processed_chunks = []
-#     for block in parsed_data["markdown_blocks"]:
-#         fixed_text = rebuild_sentences(block)
-#         clean_text = normalize(remove_tables(fixed_text))
-#         chunks = generate_extraction_chunks(clean_text, size=512, overlap=64)
-        
-#         valid_chunks = [c for c in chunks if is_valid_chunk(c)]
-#         processed_chunks.extend(valid_chunks)
-
-#     # print("===================","Quality check block","=======================")
-#     # peek_chunks(processed_chunks)
-#     # # CLEAR BLOCK FROM MEMORY
-#     # inspect_pipeline_quality(processed_chunks)
-#     # debug_retrieval_chunks(processed_chunks)
-#     # print("==========================================")
-#     # del block 
-#     # 3. FAISS Build
-#     if processed_chunks:
-#         print(f"[INFO] Building index for {len(processed_chunks)} chunks...")
-#         build_faiss_index(processed_chunks)
-        
-#         save_hash(current_fingerprint)
-#         print("[INFO] Success.")
-        
-#         # Explicitly clear chunks before finishing
-#         del processed_chunks
-#     else:
-#         print("[ERROR] No chunks found.")
-
-# if __name__ == "__main__":
-#     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+"""
+Knowledge base management.
+
+Reads a markdown source, cleans + chunks it, embeds with the configured
+sentence-transformer, and stores a FAISS index + chunk pickle + source
+fingerprint under `STORAGE_DIR`.
+
+If the user already has `storage/faiss.index` and `storage/docs.pkl` from
+their own pipeline (e.g., the user's `grounded_brain.md` flow), this module
+is a no-op — `ensure_knowledge_ready()` will skip the rebuild.
+"""
+from __future__ import annotations
+
+import hashlib
 import os
 import pickle
-import hashlib
-import faiss
-import numpy as np
-import nltk
 from pathlib import Path
-from typing import List, Optional
-from sentence_transformers import SentenceTransformer
+from typing import List
 
+import numpy as np
+
+from core.config import (
+    CHUNK_OVERLAP,
+    CHUNK_SIZE,
+    DOCS_PATH,
+    EMBEDDING_MODEL,
+    HASH_PATH,
+    INDEX_PATH,
+    MD_SOURCE_PATH,
+    STORAGE_DIR,
+)
+from core.exceptions import RetrievalError
 from core.logger import get_logger
-from extractor.sentence_rebuilder import rebuild_sentences
-from extractor.text_cleaner import normalize, remove_tables, is_valid_chunk
 from extractor.chunker import generate_extraction_chunks
+from extractor.sentence_rebuilder import rebuild_sentences
+from extractor.text_cleaner import is_valid_chunk, normalize, remove_tables
 
-# Initialize
 logger = get_logger(__name__)
-nltk.download('punkt', quiet=True)
-
-# -----------------------------
-# CONFIG
-# -----------------------------
-MD_SOURCE_PATH = "data/pdfs/grounded_brain.md"
-STORAGE_DIR = Path("storage")
-INDEX_PATH = STORAGE_DIR / "faiss.index"
-DOCS_PATH = STORAGE_DIR / "docs.pkl"
-HASH_PATH = STORAGE_DIR / "index.hash"
-MODEL_NAME = "BAAI/bge-small-en-v1.5"
-
-STORAGE_DIR.mkdir(exist_ok=True)
-
-# -----------------------------
-# 1️⃣ Diagnostic Tools
-# -----------------------------
-
-def peek_chunks(chunks: List[str]):
-    """Diagnostic tool to verify chunk quality without memory overhead."""
-    if not chunks:
-        logger.error("[DIAGNOSTIC] FAILED: No chunks found.")
-        return
-
-    print(f"\n--- SURGICAL CHUNK DIAGNOSTIC (Total: {len(chunks)}) ---")
-    # Check first, middle, and last to ensure consistency
-    indices = [0, len(chunks) // 2, len(chunks) - 1]
-    
-    for i in indices:
-        if i < len(chunks):
-            print(f"\n[CHUNK #{i}]")
-            print(f"Length: {len(chunks[i])} chars")
-            print(f"Content: {chunks[i][:300]}...") 
-            print("-" * 30)
 
 
-def load_chunks() -> List[str]:
-    if not os.path.exists(DOCS_PATH):
-        return []
-
-    # 🚨 Critical fix: check empty file
-    if os.path.getsize(DOCS_PATH) == 0:
-        logger.warning("[LOAD CHUNKS] Empty file detected. Deleting...")
-        os.remove(DOCS_PATH)
-        return []
-
-    try:
-        with open(DOCS_PATH, "rb") as f:
-            data = pickle.load(f)
-            logger.info(f"[VERIFY] DOCS_PATH size: {os.path.getsize(DOCS_PATH)} bytes")
-            if isinstance(data, list):
-                return data
-            elif isinstance(data, dict) and "chunks" in data:
-                return data["chunks"]
-            else:
-                return []
-
-    except Exception as e:
-        logger.warning(f"[LOAD CHUNKS FAILED] {e}")
-
-        # 🚨 Auto-recovery
-        os.remove(DOCS_PATH)
-        logger.warning("[LOAD CHUNKS] Corrupted file deleted")
-
-        return []
-
-
-
-def inspect_pipeline_quality(chunks: List[str]):
-    """Surgically inspects chunks for cleaning and windowing logic artifacts."""
-    if not chunks:
-        print("\n[!] CRITICAL: No chunks found. Pipeline is broken.")
-        return
-
-    total = len(chunks)
-    sample_indices = [0, total // 2, total - 1] if total > 2 else range(total)
-
-    print(f"\n{'='*60}")
-    print(f"📊 PIPELINE INSPECTION: {total} Total Chunks Generated")
-    print(f"{'='*60}")
-
-    for idx in sample_indices:
-        chunk = chunks[idx]
-        print(f"\n[SAMPLE CHUNK #{idx}]")
-        print(f"📏 Size: {len(chunk)} characters")
-        print(f"📝 Preview: {chunk[:400]}...") 
-        print(f"{'-'*30}")
-    
-    print("\n[VERIFICATION CHECKLIST]")
-    print("1. Glued words? -> Check rebuild_sentences.")
-    print("2. Tables? -> Check remove_tables.")
-    print("3. Cutoffs? -> Check chunker overlap.")
-    print(f"{'='*60}\n")
-
-# -----------------------------
-# 2️⃣ Hashing & State Management
-# -----------------------------
-
-def compute_fingerprint(file_path: str) -> str:
-    """Creates a unique hash based on file stats and content."""
+# -----------------------------------------------------------------------------
+# Hashing
+# -----------------------------------------------------------------------------
+def compute_fingerprint(file_path: str | os.PathLike) -> str:
+    """Stable fingerprint of source file using path + size + mtime."""
     try:
         stats = os.stat(file_path)
         combined = f"{file_path}_{stats.st_size}_{stats.st_mtime}"
         return hashlib.sha256(combined.encode("utf-8")).hexdigest()
-    except Exception as e:
-        logger.error(f"[HASHING] Failed to compute fingerprint: {e}")
+    except OSError as exc:
+        logger.error("[KNOWLEDGE] Cannot fingerprint %s: %s", file_path, exc)
         return ""
 
+
 def is_knowledge_synced() -> bool:
-    """Checks if the local FAISS index matches the current source file."""
-    if not HASH_PATH.exists() or not INDEX_PATH.exists() or not DOCS_PATH.exists():
+    """Return True if on-disk artifacts match the current source file."""
+    if not (INDEX_PATH.exists() and DOCS_PATH.exists() and HASH_PATH.exists()):
         return False
-    
-    current_hash = compute_fingerprint(MD_SOURCE_PATH)
-    stored_hash = HASH_PATH.read_text().strip()
-    return current_hash == stored_hash
+    if not Path(MD_SOURCE_PATH).exists():
+        # Source removed but artifacts present — treat as synced (user shipped
+        # their own pre-built index without exposing the source markdown).
+        return True
+    return HASH_PATH.read_text().strip() == compute_fingerprint(MD_SOURCE_PATH)
 
-# -----------------------------
-# 3️⃣ Build & Load
-# -----------------------------
 
-def build_knowledge_base():
-    """Main pipeline: MD -> Clean -> Chunk -> Embed -> FAISS."""
+# -----------------------------------------------------------------------------
+# Loading
+# -----------------------------------------------------------------------------
+def load_chunks() -> List[str]:
+    """Read the chunk pickle. Returns [] (and self-heals) on corruption."""
+    if not DOCS_PATH.exists():
+        return []
+    if DOCS_PATH.stat().st_size == 0:
+        logger.warning("[KNOWLEDGE] Empty docs.pkl — removing.")
+        DOCS_PATH.unlink(missing_ok=True)
+        return []
     try:
-        logger.info(f"🚀 Starting Knowledge Build from {MD_SOURCE_PATH}")
-        
-        # 1. Read Source
-        raw_text = Path(MD_SOURCE_PATH).read_text(encoding="utf-8")
-        
-        # 2. Process & Refine
-        # We split by headers to maintain some contextual local boundaries
-        blocks = raw_text.split("\n## ")
-        processed_chunks = []
-        
-        for block in blocks:
-            # Apply your fine-tuned cleaning stack
-            fixed_text = rebuild_sentences(block)
-            clean_text = normalize(remove_tables(fixed_text))
-            
-            # Generate overlapping windows
-            chunks = generate_extraction_chunks(clean_text, size=512, overlap=64)
-            valid_chunks = [c for c in chunks if is_valid_chunk(c)]
-            processed_chunks.extend(valid_chunks)
+        with DOCS_PATH.open("rb") as fh:
+            data = pickle.load(fh)
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict) and "chunks" in data:
+            return list(data["chunks"])
+        logger.warning("[KNOWLEDGE] Unexpected docs.pkl shape: %s", type(data))
+        return []
+    except (pickle.UnpicklingError, EOFError) as exc:
+        logger.warning("[KNOWLEDGE] Corrupted docs.pkl (%s) — removing.", exc)
+        DOCS_PATH.unlink(missing_ok=True)
+        return []
 
-        if not processed_chunks:
-            logger.error("[BUILD] No valid chunks generated. Check source file.")
-            return
 
-        # 3. Embedding & Indexing
-        logger.info(f"[BUILD] Embedding {len(processed_chunks)} chunks using {MODEL_NAME}...")
-        model = SentenceTransformer(MODEL_NAME)
-        embeddings = model.encode(processed_chunks, show_progress_bar=True)
-        embeddings = np.array(embeddings).astype("float32")
+# -----------------------------------------------------------------------------
+# Build
+# -----------------------------------------------------------------------------
+def _split_blocks(raw_text: str) -> List[str]:
+    """Split markdown by top-level headings to keep semantic locality."""
+    blocks = raw_text.split("\n## ")
+    return [b for b in blocks if b.strip()]
 
-        index = faiss.IndexFlatL2(embeddings.shape[1])
-        index.add(embeddings)
 
-        # 4. Save Artifacts
-        faiss.write_index(index, str(INDEX_PATH))
-        with open(DOCS_PATH, "wb") as f:
-            pickle.dump(processed_chunks, f)
-        
-        HASH_PATH.write_text(compute_fingerprint(MD_SOURCE_PATH))
-        
-        logger.info("✅ Knowledge base built and saved successfully.")
-        
-        # Diagnostics
-        peek_chunks(processed_chunks)
-        inspect_pipeline_quality(processed_chunks)
+def build_knowledge_base() -> List[str]:
+    """Read MD source -> clean -> chunk -> embed -> persist. Returns chunks."""
+    src = Path(MD_SOURCE_PATH)
+    if not src.exists():
+        raise RetrievalError(
+            f"Knowledge source not found: {MD_SOURCE_PATH}. Set MD_SOURCE_PATH "
+            "to your grounded brain markdown file or drop a pre-built "
+            "faiss.index + docs.pkl into the storage directory."
+        )
 
-    except Exception as e:
-        logger.error(f"❌ Critical Failure during Knowledge Build: {e}")
-        raise
+    logger.info("[KNOWLEDGE] Building from %s", src)
+    raw_text = src.read_text(encoding="utf-8")
 
-def ensure_knowledge_ready():
-    """External API to ensure index exists and is up to date."""
-    if is_knowledge_synced():
-        logger.info("[KNOWLEDGE] FAISS index is up-to-date. Ready for retrieval.")
+    processed: List[str] = []
+    for block in _split_blocks(raw_text):
+        rebuilt = rebuild_sentences(block)
+        cleaned = normalize(remove_tables(rebuilt))
+        for chunk in generate_extraction_chunks(
+            cleaned, size=CHUNK_SIZE, overlap=CHUNK_OVERLAP
+        ):
+            if is_valid_chunk(chunk):
+                processed.append(chunk)
+
+    if not processed:
+        raise RetrievalError("No valid chunks produced from knowledge source.")
+
+    # Embedding — imported lazily so unit tests that stub retrieval don't pay
+    # the cost of loading sentence-transformers.
+    from sentence_transformers import SentenceTransformer  # noqa: WPS433
+    import faiss  # noqa: WPS433
+
+    logger.info("[KNOWLEDGE] Embedding %d chunks via %s",
+                len(processed), EMBEDDING_MODEL)
+    model = SentenceTransformer(EMBEDDING_MODEL)
+    embeddings = model.encode(
+        [f"passage: {c}" for c in processed], show_progress_bar=False
+    ).astype("float32")
+    faiss.normalize_L2(embeddings)
+
+    index = faiss.IndexFlatIP(embeddings.shape[1])
+    index.add(embeddings)
+
+    STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+    faiss.write_index(index, str(INDEX_PATH))
+    with DOCS_PATH.open("wb") as fh:
+        pickle.dump(processed, fh)
+    HASH_PATH.write_text(compute_fingerprint(src))
+
+    logger.info("[KNOWLEDGE] Built %d chunks, persisted to %s",
+                len(processed), STORAGE_DIR)
+    return processed
+
+
+def ensure_knowledge_ready() -> None:
+    """No-op if synced, otherwise rebuilds. Safe to call repeatedly."""
+    if is_knowledge_synced() and DOCS_PATH.exists():
+        logger.debug("[KNOWLEDGE] Index in sync — nothing to do.")
         return
-    
-    logger.warning("[KNOWLEDGE] Stale or missing index. Rebuilding...")
+    logger.info("[KNOWLEDGE] Index missing or stale — rebuilding.")
     build_knowledge_base()
 
-# -----------------------------
-# 4️⃣ Test Block
-# -----------------------------
+
 if __name__ == "__main__":
-    try:
-        print("--- Knowledge Module Test Mode ---")
-        ensure_knowledge_ready()
-        
-        # Verify Load
-        with open(DOCS_PATH, "rb") as f:
-            chunks = pickle.load(f)
-            print(f"[TEST] Successfully loaded {len(chunks)} chunks.")
-            
-    except Exception as e:
-        print(f"[TEST] Failed: {e}")
+    ensure_knowledge_ready()
+    print(f"Loaded {len(load_chunks())} chunks from {STORAGE_DIR}")

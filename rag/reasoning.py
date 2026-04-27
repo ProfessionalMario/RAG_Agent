@@ -1,146 +1,108 @@
+"""
+LLM reasoning layer.
+
+Talks to a local Ollama-served Gemma3 (or any compatible model) with a
+strict, deterministic prompt. When Ollama is unreachable and
+`LLM_GRACEFUL_FALLBACK` is enabled (default), returns a safe deterministic
+string so the rest of the pipeline — and the test suite — keeps working.
+"""
+from __future__ import annotations
+
+from typing import Dict, List
 
 import requests
-from typing import List, Dict
+
+from core.config import (
+    LLM_GRACEFUL_FALLBACK,
+    OLLAMA_MODEL,
+    OLLAMA_TIMEOUT,
+    OLLAMA_URL,
+)
 from core.logger import get_logger
 
 logger = get_logger(__name__)
 
-# -----------------------------
-# CONFIG
-# -----------------------------
-OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
-MODEL_NAME = "gemma3:4b"  # Optimized for speed/deterministic logic
+_FALLBACK_DECISION = (
+    "Decision: keep\n"
+    "Reason: LLM unreachable — using safe fallback (no transformation)."
+)
+
 
 def build_prompt(column_data: Dict, retrieved_docs: List[str]) -> str:
-    """Build structured prompt for the LLM using RAG context."""
+    """Assemble the strict 'Senior ML engineer' prompt with RAG context."""
     col = column_data.get("column", "Unknown")
     dtype = column_data.get("dtype", "Unknown")
     missing = round(column_data.get("missing_percent", 0))
     skew = column_data.get("skew", 0)
-    task = column_data.get("task", "unknown")  # regression / classification
-    sample_size = column_data.get("sample_size", "unknown")  # small / large
-    cardinality = column_data.get("cardinality", "unknown")  # low / high
-    outliers = column_data.get("outliers", "unknown")  # present / none
-    variance = column_data.get("variance", "unknown")
-    clean_knowledge = []
-    # Do it in one pass
+
     if retrieved_docs:
-        knowledge = "\n".join(f"- [DOC REFERENCE]: {doc}" for doc in retrieved_docs)
+        knowledge = "\n".join(f"- [DOC]: {d}" for d in retrieved_docs)
     else:
         knowledge = "No specific scikit-learn documentation found."
 
-    prompt = f"""
-You are a Senior ML Engineer. Your goal is to choose a Scikit-Learn preprocessing strategy.
+    return (
+        "You are a Senior ML Engineer. Pick a Scikit-Learn preprocessing strategy.\n\n"
+        "RULES:\n"
+        "- Use ONLY the provided KNOWLEDGE and COLUMN PROFILE.\n"
+        "- Treat each request as independent — do not infer from past datasets.\n"
+        "- If knowledge is weak, fall back to safe standard practice.\n\n"
+        f"SCIKIT-LEARN KNOWLEDGE:\n{knowledge}\n\n"
+        f"COLUMN PROFILE:\n"
+        f"- Name: {col}\n"
+        f"- Data Type: {dtype}\n"
+        f"- Missing Values: {missing}%\n"
+        f"- Skewness: {skew}\n\n"
+        "TASK:\n"
+        "Pick the right transformer. Focus on missing-value handling, encoding\n"
+        "for categorical, transformation for skew, scaling, and small-sample risk.\n\n"
+        "OUTPUT FORMAT (STRICT):\n"
+        "Decision: <Scikit-Learn class and strategy>\n"
+        "Reason: <Brief technical justification>\n"
+    ).strip()
 
-IMPORTANT:
-- Treat EACH request as completely independent.
-- Do NOT assume information from previous datasets.
-- Use ONLY the provided KNOWLEDGE and COLUMN PROFILE.
-- If knowledge is weak or missing, fall back to safe, standard preprocessing practices.
 
-SCIKIT-LEARN KNOWLEDGE:
-{knowledge}
-
-COLUMN PROFILE:
-- Name: {col}
-- Data Type: {dtype}
-- Missing Values: {missing}%
-- Skewness: {skew}
-
-ADDITIONAL CONTEXT (if available):
-- Task Type: {task}
-- Sample Size: {sample_size}
-- Cardinality: {cardinality}
-- Outliers: {outliers}
-- Variance: {variance}
-
-TASK:
-Based ONLY on the COLUMN PROFILE ({col}), select the transformer.
-    IGNORE column names mentioned in the [DOC REFERENCE] section; they are EXAMPLES only.
-Focus on:
-- Correct handling of missing values
-- Proper encoding for categorical data
-- Transformations for skewed data
-- Whether scaling is required or unnecessary
-- Avoiding overfitting for small datasets
-
-OUTPUT FORMAT (STRICT):
-Decision: <Scikit-Learn Class and strategy>
-Reason: <Brief technical justification>
-"""
-    logger.debug(f"[PROMPT BUILDER] Built prompt for column: {col}")
-    return prompt.strip()
-
-def call_llm_with_fallback(prompt: str, model_name: str = MODEL_NAME) -> str:
-    """Sends prompt to Ollama and handles connection failures."""
+def call_llm_with_fallback(prompt: str, model_name: str = OLLAMA_MODEL) -> str:
+    """POST the prompt to Ollama. On failure return a deterministic fallback."""
     try:
-        logger.info(f"🧠 [REASONING] Calling Ollama ({model_name})...")
-        
+        logger.info("[REASONING] Calling Ollama model=%s", model_name)
         response = requests.post(
             OLLAMA_URL,
             json={
                 "model": model_name,
                 "prompt": prompt,
                 "stream": False,
-                "options": {
-                    "temperature": 0.0,  # Zero randomness for statistical consistency
-                    "num_predict": 120   # Enough for a clear reason
-                }
+                "options": {"temperature": 0.0, "num_predict": 160},
             },
-            timeout=45
+            timeout=OLLAMA_TIMEOUT,
         )
-        
         if response.status_code != 200:
-            logger.error(f"Ollama error {response.status_code}: {response.text}")
-            return "Decision: SimpleImputer(strategy='median')\nReason: LLM service error fallback"
+            logger.error("[REASONING] Ollama HTTP %s: %s",
+                         response.status_code, response.text[:200])
+            if LLM_GRACEFUL_FALLBACK:
+                return _FALLBACK_DECISION
+            raise RuntimeError(f"Ollama HTTP {response.status_code}")
+        return response.json().get("response", "").strip()
 
-        result = response.json().get("response", "")
-        return result.strip()
+    except (requests.RequestException, ValueError) as exc:
+        logger.error("[REASONING] Ollama call failed: %s", exc)
+        if LLM_GRACEFUL_FALLBACK:
+            return _FALLBACK_DECISION
+        raise
 
-    except Exception as e:
-        logger.error(f"Ollama connection failed: {e}")
-        return "Decision: keep\nReason: LLM connection timeout"
 
 def parse_llm_output(output: str) -> Dict[str, str]:
-    """Extracts Decision and Reason from LLM text using strict splitting."""
-    decision = "keep"
-    reason = "Fallback applied"
-
+    """Extract Decision / Reason keys; tolerant of formatting drift."""
+    parsed = {"decision": "keep", "reason": "Fallback applied"}
     if not output:
-        return {"decision": decision, "reason": reason}
-
-    try:
-        lines = output.split("\n")
-        for line in lines:
-            if ":" in line:
-                key, val = line.split(":", 1)
-                if "decision" in key.lower():
-                    decision = val.strip()
-                elif "reason" in key.lower():
-                    reason = val.strip()
-        
-        return {"decision": decision, "reason": reason}
-    except Exception as e:
-        logger.warning(f"Failed to parse LLM output: {e}")
-        return {"decision": decision, "reason": reason}
-
-# -----------------------------
-# TEST BLOCK
-# -----------------------------
-if __name__ == "__main__":
-    test_col = {
-        "column": "Age",
-        "dtype": "numeric",
-        "missing_percent": 15,
-        "skew": 2.5
-    }
-    test_docs = ["For skewed data, use median imputation via SimpleImputer.", 
-                 "Apply PowerTransformer for variables with skewness > 1."]
-    
-    print("--- Testing Reasoning Module ---")
-    prompt = build_prompt(test_col, test_docs)
-    raw = call_llm_with_fallback(prompt)
-    parsed = parse_llm_output(raw)
-    
-    print(f"RAW OUTPUT:\n{raw}\n")
-    print(f"PARSED RESULT: {parsed}")
+        return parsed
+    for line in output.splitlines():
+        if ":" not in line:
+            continue
+        key, val = line.split(":", 1)
+        k = key.strip().lower()
+        v = val.strip()
+        if "decision" in k:
+            parsed["decision"] = v or parsed["decision"]
+        elif "reason" in k:
+            parsed["reason"] = v or parsed["reason"]
+    return parsed

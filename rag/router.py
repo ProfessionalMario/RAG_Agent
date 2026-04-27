@@ -1,57 +1,28 @@
 """
-Query Router Module – Developer Guide
+Query router.
 
-Routes a user query to the appropriate knowledge context.
-
---------------------------------------------------------------------------------
-Purpose:
---------------------------------------------------------------------------------
-- Categorize a natural language query for retrieval
-- Supports multiple knowledge domains:
-    • EDA (exploratory data analysis)
-    • ML (modeling / training / pipeline)
-    • General fallback
-
---------------------------------------------------------------------------------
-Core Function:
---------------------------------------------------------------------------------
-route_query(query: str) -> str
-    - Input: a user query string
-    - Output: route key as string: "eda", "ml", or "general"
-    - Behavior:
-        • Matches keywords in lowercase
-        • Returns first matching route
-        • Falls back to "general" if no match
-
---------------------------------------------------------------------------------
-Usage Example:
---------------------------------------------------------------------------------
-route = route_query("How to handle missing values in Age column?")
-print(route)
-# "eda"
-
-route = route_query("Train a regression model")
-print(route)
-# "ml"
+Routes a free-form user question into one of three knowledge domains so the
+right context is retrieved.
 """
+from __future__ import annotations
+
+EDA_KEYWORDS = (
+    "missing", "null", "column", "dataset",
+    "eda", "feature", "imputation", "duplicate",
+)
+ML_KEYWORDS = (
+    "model", "train", "algorithm", "classification",
+    "regression", "pipeline", "fit",
+)
+
 
 def route_query(query: str) -> str:
+    """Return one of 'eda', 'ml', 'general'."""
+    if not query:
+        return "general"
     q = query.lower()
-
-    eda_keywords = [
-        "missing", "null", "column", "dataset",
-        "eda", "feature", "imputation", "duplicate"
-    ]
-
-    ml_keywords = [
-        "model", "train", "algorithm", "classification",
-        "regression", "pipeline", "fit"
-    ]
-
-    if any(k in q for k in eda_keywords):
+    if any(k in q for k in EDA_KEYWORDS):
         return "eda"
-
-    if any(k in q for k in ml_keywords):
+    if any(k in q for k in ML_KEYWORDS):
         return "ml"
-
     return "general"

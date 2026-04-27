@@ -17,19 +17,27 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Start application"
+args = "RAG Demo"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Tests"
 
 [[workflows.workflow]]
-name = "Start application"
+name = "RAG Demo"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "streamlit run ui/app.py --server.port 5000 --server.address 0.0.0.0"
-waitForPort = 5000
+args = "LD_PRELOAD=/lib/x86_64-linux-gnu/libstdc++.so.6 python cli.py pipeline data/reports/sample_report.txt"
 
-[workflows.workflow.metadata]
-outputType = "webview"
+[[workflows.workflow]]
+name = "Tests"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "LD_PRELOAD=/lib/x86_64-linux-gnu/libstdc++.so.6 python -m pytest tests/ -q"
 
 [[ports]]
 localPort = 5000

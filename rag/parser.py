@@ -1,59 +1,37 @@
 """
-EDA Report Parser – Developer Guide
+EDA report parser.
 
-This module converts structured EDA reports into machine-readable
-column-level data (list of dictionaries).
+Reads a structured pipe-separated EDA report and produces a list of
+column-level dictionaries the rest of the pipeline understands.
 
---------------------------------------------------------------------------------
-Callable Functions:
---------------------------------------------------------------------------------
+A line looks like:
 
-parse_report(report_text: str) -> List[Dict]
-    - Parses structured EDA text into a list of column dictionaries.
-    - Output fields per column: column name, missing count, missing percent, dtype.
-    - Raises ParserError on empty/malformed reports.
+    age | skew=0.4 | corr=0.12 | missing=15
 
-extract_rows(text: str) -> int
-    - Extracts total number of rows from report text.
-
-extract_missing_by_column(text: str) -> Dict[str, int]
-    - Extracts missing counts per column.
-    - Returns empty dict if section missing.
-
-extract_column_types(text: str) -> Tuple[List[str], List[str]]
-    - Returns numeric and categorical columns.
-
-resolve_dtype(column: str, numeric_cols: List[str], categorical_cols: List[str]) -> str
-    - Returns column datatype: "numeric", "categorical", or "unknown".
-
-compute_missing_percent(missing_count: int, total_rows: int) -> float
-    - Computes missing percentage safely.
-
---------------------------------------------------------------------------------
-Usage Notes:
---------------------------------------------------------------------------------
-from parser import parse_report
-
-report_text = open("eda_report.txt").read()
-parsed_columns = parse_report(report_text)
-
-for col in parsed_columns:
-    print(f"{col['column']}: {col['missing_percent']}% missing")
+Recognised attributes per column:
+    skew=<float>      -> profile["skew"]
+    corr=<float>      -> profile["correlation"]; sets high_target_corr if |x|>0.7
+    missing=<float>   -> profile["missing_percent"]
+    binary            -> categorical
+    ordinal           -> categorical
+    cardinality       -> categorical
 """
+from __future__ import annotations
 
 import re
-from typing import List, Dict
+from typing import Dict, List, Tuple
 
-from core.logger import get_logger
 from core.exceptions import ParserError
+from core.logger import get_logger
 
 logger = get_logger(__name__)
 
 INVALID_COLUMNS = {
-    "DATASET", "TASK", "DISTRIBUTION", "FEATURE", 
+    "DATASET", "TASK", "DISTRIBUTION", "FEATURE",
     "TARGET", "CARDINALITY", "VARIANCE", "END",
-    "GLOBAL", "FEATURES", "SUMMARY"
+    "GLOBAL", "FEATURES", "SUMMARY",
 }
+
 VALID_DECISIONS = {
     "drop_column",
     "impute_mean",
@@ -62,276 +40,156 @@ VALID_DECISIONS = {
     "encode_onehot",
     "normalize",
     "standardize",
-    "keep"
+    "keep",
 }
 
+
 def is_valid_column(col: str) -> bool:
-    """
-    Balanced filter: removes structural noise without killing real columns
-    """
+    """Filter out structural noise without killing real column names."""
     if not col:
         return False
-
     col_clean = col.strip()
-
-    # Block known structural tokens only
     if col_clean.upper() in INVALID_COLUMNS:
         return False
-    
     if len(col_clean) > 25:
         return False
-
-    # Optional: block weird tokens (numbers-only, etc.)
     if col_clean.isdigit():
         return False
-
     return True
-def parse_report(report_text: str, missing_map: Dict[str, int] = None, total_rows: int = None):
-    columns = {}
-    lines = report_text.splitlines()
 
-    logger.info(f"[PARSER] Total lines: {len(lines)}")
 
-    for i, line in enumerate(lines):
+def parse_report(
+    report_text: str,
+    missing_map: Dict[str, int] | None = None,
+    total_rows: int | None = None,
+) -> List[Dict]:
+    """Convert a pipe-separated EDA report into column profile dicts."""
+    columns: Dict[str, Dict] = {}
+    for i, line in enumerate(report_text.splitlines()):
         line = line.strip()
-        if not line:
+        if not line or line.startswith("#") or "|" not in line:
             continue
-
-        if "|" not in line:
-            continue
-
-        logger.debug(f"[PARSER] Processing line {i}: {line}")
 
         parts = [p.strip() for p in line.split("|")]
-
-        # -----------------------------------
-        # 🧠 Extract column name (FIRST TOKEN)
-        # -----------------------------------
-        col_candidate = parts[0]
-
-        # Clean patterns like: "TASK: regression"
-        col_candidate = col_candidate.split(":")[0].strip()
-
+        col_candidate = parts[0].split(":")[0].strip()
         if not is_valid_column(col_candidate):
-            logger.debug(f"[PARSER] ❌ Invalid column skipped: {col_candidate}")
+            logger.debug("[PARSER] line %d skipped: %s", i, col_candidate)
             continue
 
         col = col_candidate
-        logger.debug(f"[PARSER] ✅ Column detected: {col}")
+        columns.setdefault(col, {"column": col})
 
-        columns.setdefault(col, {})
-        columns[col]["column"] = col
-
-        # -----------------------------------
-        # 📊 Parse attributes from rest
-        # -----------------------------------
         for part in parts[1:]:
-            part = part.lower()
+            part_l = part.lower()
 
-            # Skew
-            if "skew=" in part:
+            if "skew=" in part_l:
                 try:
-                    value = float(part.split("skew=")[1])
-                    columns[col]["skew"] = value
-                    logger.debug(f"[PARSER] {col} skew={value}")
-                except:
-                    logger.warning(f"[PARSER] Failed skew parse: {part}")
+                    columns[col]["skew"] = float(part_l.split("skew=")[1].split()[0])
+                except (ValueError, IndexError):
+                    logger.warning("[PARSER] bad skew in %r", part)
 
-            # Correlation
-            if "corr=" in part:
+            if "corr=" in part_l:
                 try:
-                    raw = part.split("corr=")[1]
-                    value = float(re.findall(r"-?\d+\.\d+", raw)[0])
-                    columns[col]["correlation"] = value
-                    columns[col]["high_target_corr"] = abs(value) > 0.7
-                    logger.debug(f"[PARSER] {col} corr={value}")
-                except:
-                    logger.warning(f"[PARSER] Failed corr parse: {part}")
+                    raw = part_l.split("corr=")[1]
+                    val = float(re.findall(r"-?\d+(?:\.\d+)?", raw)[0])
+                    columns[col]["correlation"] = val
+                    columns[col]["high_target_corr"] = abs(val) > 0.7
+                except (ValueError, IndexError):
+                    logger.warning("[PARSER] bad corr in %r", part)
 
-            # Binary
-            if "binary" in part:
+            if "missing=" in part_l:
+                try:
+                    val = float(part_l.split("missing=")[1].split()[0])
+                    columns[col]["missing_percent"] = val
+                except (ValueError, IndexError):
+                    logger.warning("[PARSER] bad missing in %r", part)
+
+            if "binary" in part_l or "ordinal" in part_l or "cardinality" in part_l:
                 columns[col]["dtype"] = "categorical"
 
-            # Ordinal
-            if "ordinal" in part:
-                columns[col]["dtype"] = "categorical"
+        columns[col].setdefault("dtype", "numeric")
 
-            # Cardinality hint
-            if "cardinality" in part:
-                columns[col]["dtype"] = "categorical"
-
-        # -----------------------------------
-        # 🧠 Default dtype fallback
-        # -----------------------------------
-        if "dtype" not in columns[col]:
-            columns[col]["dtype"] = "numeric"  # safe fallback
-
-    # -----------------------------------
-    # 📦 Final normalization
-    # -----------------------------------
-    parsed_columns = []
-
+    parsed_columns: List[Dict] = []
     for col, data in columns.items():
-        missing_count = 0
-        missing_percent = 0.0
-
-        if missing_map and col in missing_map:
-            missing_count = missing_map[col]
-
-        if total_rows:
-            missing_percent = compute_missing_percent(missing_count, total_rows)
-
+        missing_count = (missing_map or {}).get(col, 0)
+        if total_rows and "missing_percent" not in data:
+            data["missing_percent"] = compute_missing_percent(missing_count, total_rows)
         parsed_columns.append({
             "column": col,
             "dtype": data.get("dtype", "unknown"),
-            "missing_percent": missing_percent,
+            "missing_percent": data.get("missing_percent", 0.0),
             "skew": data.get("skew", 0),
             "correlation": data.get("correlation", 0),
             "high_target_corr": data.get("high_target_corr", False),
         })
 
-    # -----------------------------------
-    # 📊 Logging
-    # -----------------------------------
-    logger.info(f"[PARSER] Final column count: {len(parsed_columns)}")
-
-    if len(parsed_columns) == 0:
-        logger.error("[PARSER] ❌ No columns parsed — FORMAT mismatch")
-    else:
-        logger.debug(f"[PARSER] Columns parsed: {[c['column'] for c in parsed_columns]}")
-
+    logger.info("[PARSER] Parsed %d columns", len(parsed_columns))
     return parsed_columns
 
-# -----------------------------
-# 🔍 HELPER FUNCTIONS
-# -----------------------------
 
-
+# ---------------------------------------------------------------------------
 def extract_rows(text: str) -> int:
     match = re.search(r"Rows:\s*(\d+)", text)
-    if match:
-        return int(match.group(1))
-
-    logger.error("Rows not found in report")
-    raise ParserError("Rows not found")
+    if not match:
+        raise ParserError("Rows not found")
+    return int(match.group(1))
 
 
 def extract_missing_by_column(text: str) -> Dict[str, int]:
-    """
-    Extract missing values per column
-    """
-
-    logger.info("Extracting missing values by column")
-
-    missing_map = {}
-
-    section = re.search(
-        r"Missing by Column(.*?)(\n\n|\Z)", text, re.DOTALL
-    )
-
+    out: Dict[str, int] = {}
+    section = re.search(r"Missing by Column(.*?)(\n\n|\Z)", text, re.DOTALL)
     if not section:
-        logger.warning("Missing by column section not found")
-        return missing_map
-
-    lines = section.group(1).strip().split("\n")
-
-    for line in lines:
-        match = re.match(r"(\w+):\s*(\d+)", line.strip())
-        if match:
-            col = match.group(1)
-            val = int(match.group(2))
-            missing_map[col] = val
-
-    return missing_map
+        return out
+    for line in section.group(1).strip().split("\n"):
+        m = re.match(r"(\w+):\s*(\d+)", line.strip())
+        if m:
+            out[m.group(1)] = int(m.group(2))
+    return out
 
 
-def extract_column_types(text: str):
-    """
-    Extract numeric and categorical columns
-    """
-
-    logger.info("Extracting column types")
-
+def extract_column_types(text: str) -> Tuple[List[str], List[str]]:
     numeric_match = re.search(r"Numeric\s*:\s*(.*)", text)
     categorical_match = re.search(r"Categorical\s*:\s*(.*)", text)
-
     if not numeric_match or not categorical_match:
-        logger.error("Column types not found")
         raise ParserError("Column types section missing")
-
     numeric_cols = [c.strip() for c in numeric_match.group(1).split(",")]
     categorical_cols = [c.strip() for c in categorical_match.group(1).split(",")]
-
     return numeric_cols, categorical_cols
 
 
 def resolve_dtype(column: str, numeric_cols: List[str], categorical_cols: List[str]) -> str:
-    """
-    Resolve datatype for a column
-    """
-
     if column in numeric_cols:
         return "numeric"
-    elif column in categorical_cols:
+    if column in categorical_cols:
         return "categorical"
-
-    logger.warning(f"Datatype unknown for column: {column}")
     return "unknown"
 
 
 def compute_missing_percent(missing_count: int, total_rows: int) -> float:
-    """
-    Compute missing percentage safely
-    """
-
-    try:
-        if total_rows == 0:
-            return 0.0
-
-        return round((missing_count / total_rows) * 100, 2)
-
-    except Exception as e:
-        logger.error(f"Error computing missing %: {str(e)}")
+    if not total_rows:
         return 0.0
+    return round((missing_count / total_rows) * 100, 2)
+
 
 def normalize_decision(decision: str) -> str:
-    """
-    Normalize LLM output into strict preprocessing actions.
-    Enforces ENUM safety.
-    """
-
+    """Map a free-form LLM decision to one of `VALID_DECISIONS`."""
     if not isinstance(decision, str):
-        logger.error(f"[NORMALIZE] Invalid type: {type(decision)} | value={decision}")
         return "keep"
-
-    original = decision
-    decision = decision.lower().strip()
-
-    logger.debug(f"[NORMALIZE] Raw: '{original}' → '{decision}'")
-
-    # 🔒 Strict mapping
-    if any(k in decision for k in ["drop", "remove"]):
+    d = decision.lower().strip()
+    if any(k in d for k in ("drop", "remove")):
         result = "drop_column"
-    elif "mean" in decision:
-        result = "impute_mean"
-    elif "median" in decision:
+    elif "median" in d:
         result = "impute_median"
-    elif "mode" in decision:
+    elif "mean" in d:
+        result = "impute_mean"
+    elif "mode" in d:
         result = "impute_mode"
-    elif "encode" in decision or "onehot" in decision:
+    elif "encode" in d or "onehot" in d:
         result = "encode_onehot"
-    elif "normalize" in decision:
+    elif "normalize" in d:
         result = "normalize"
-    elif "standardize" in decision or "scale" in decision:
+    elif "standardize" in d or "scale" in d:
         result = "standardize"
     else:
         result = "keep"
-
-    # 🛑 Final guard
-    if result not in VALID_DECISIONS:
-        logger.warning(f"[NORMALIZE] Invalid mapped decision: {result}, fallback to keep")
-        return "keep"
-
-    logger.info(f"[NORMALIZE] Final decision: '{result}' (from '{original}')")
-
-    return result
+    return result if result in VALID_DECISIONS else "keep"
