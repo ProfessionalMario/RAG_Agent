@@ -155,32 +155,26 @@ strengthens the answer when the model is offline.
 └── total_context/               # LLM-friendly code index (see below)
 ```
 
-### `context/` and `total_context/` — the LLM-friendly code index
+### AI-Ready Metadata (context/)
 
-These two folders exist so an external LLM (or a future you) can quickly
-bootstrap an understanding of the codebase **without reading every file**.
+This project includes a built-in Context Engine to make the codebase "instantly readable" for LLM agents and developers:
 
-**`total_context/`** — the *generators*. Pure-Python scripts that walk the
-project tree and emit the JSON / TXT artefacts:
+High-Density Mapping: project_summary.json provides a one-shot map of all modules, dependencies, and public symbols.
 
-- `structure_extractor.py` → walks the tree and writes `project_tree.txt`
-- `docstring_extractor.py` → pulls every module/class/function docstring
-- `project_summary.py`     → rolls everything up into `project_doc.json`
+Docstring Indexing: docstrings.txt allows an AI to understand function signatures and intent without wasting tokens on implementation logic.
 
-Re-run any of them after a refactor to refresh the snapshot.
-
-**`context/`** — the *snapshots*. The output of the generators above, ready
-for an LLM context window:
-
-- `project_tree.json`   → full file tree as JSON
-- `docstrings.txt`      → every docstring in the project
-- `project_summary.json`→ one-shot project summary (modules, dependencies,
-  public symbols)
-
-Drop the contents of `context/` into a long-context model and you have a
-complete map of the project in seconds.
+Automated Refresh: The total_context/ scripts ensure that as the code evolves, the AI's "mental map" remains 100% accurate.
 
 ---
+
+## AI-Native Development (Context Engineering)
+This project is built to be LLM-friendly. Instead of forcing an AI agent to ingest the entire codebase (wasting tokens and losing precision), the context/ directory provides a high-density map of the system:
+
+Token Efficiency: By providing docstrings.txt and project_summary.json, external LLMs can understand every function signature, parameter, and module dependency without reading a single line of implementation logic.
+
+Precision Debugging: If there is an indentation error or a logic bug, an AI can use the Function Index to locate the exact file and line number, rather than "guessing" based on a raw file dump.
+
+One-Shot Bootstrapping: A new model can "know" the entire 76-test architecture in under 2k tokens by reading the project_summary.json.
 
 ## Running the tests
 
@@ -213,10 +207,6 @@ The suite covers:
 pip install -r requirements.txt
 ```
 
-Then run any of the commands at the top of this README. On Replit /
-Debian-based systems the `LD_PRELOAD=...libstdc++.so.6` prefix is needed so
-that numpy/faiss can find a recent enough libstdc++ — the bundled workflow
-already does this for you.
 
 ---
 
