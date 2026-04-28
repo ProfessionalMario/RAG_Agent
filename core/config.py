@@ -21,7 +21,7 @@ from pathlib import Path
 # --- LLM (Ollama / Gemma) -----------------------------------------------------
 OLLAMA_URL: str = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/generate")
 OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "gemma3:4b")
-OLLAMA_TIMEOUT: int = int(os.getenv("OLLAMA_TIMEOUT", "45"))
+OLLAMA_TIMEOUT: int = int(os.getenv("OLLAMA_TIMEOUT", "90"))
 
 # --- Embedding model ----------------------------------------------------------
 # A small, fast model. Override with EMBEDDING_MODEL to point at a local path.

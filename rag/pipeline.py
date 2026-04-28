@@ -109,12 +109,29 @@ def run_pipeline(report_path: str, retriever=None) -> List[Dict]:
                     "reason": guardrail["reason"],
                 })
                 continue
+            # NEW: If guardrail says data is complete, skip LLM for missing-value logic
+            # You can either 'continue' here or set a flag to simplify the prompt
+            if guardrail["hint"] == "no_missing_values" and is_clean_numeric(col_data):
+                final_results.append({
+                    "column": name,
+                    "decision": "Keep (No Action)",
+                    "reason": "Guardrail: Data is complete and statistically stable.",
+                })
+                continue
 
+            # Only if it passes the checks above do we build the query and call the LLM
             query = build_query(col_data)
+
+            # query = build_query(col_data)
+            # logger.info("Query says============"+str(query))
             context = retr.retrieve(query, k=3) if retr else []
+
             prompt = build_prompt(col_data, context)
+            # logger.info("prompt says============"+str(prompt))
             raw_output = call_llm_with_fallback(prompt)
+            # logger.info("Raw_output=========="+str(raw_output))
             parsed = parse_llm_output(raw_output)
+            # logger.info("parsed========="+str(parsed))
 
             record = {
                 "column": name,
@@ -122,6 +139,7 @@ def run_pipeline(report_path: str, retriever=None) -> List[Dict]:
                 "decision": parsed.get("decision", "keep"),
                 "reason": parsed.get("reason", "RAG reasoning."),
             }
+            logger.info("Record============================"+str(record))
             review_decision(record, context)
             final_results.append(record)
         except Exception as exc:  # noqa: BLE001
@@ -162,3 +180,5 @@ def run_query(question: str, retriever=None) -> str:
     except Exception as exc:  # noqa: BLE001
         logger.exception("[PIPELINE] Query failed")
         return f"System error while answering: {exc}"
+
+

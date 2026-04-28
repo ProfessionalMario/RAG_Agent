@@ -71,13 +71,12 @@ def call_llm_with_fallback(prompt: str, model_name: str = OLLAMA_MODEL) -> str:
                 "model": model_name,
                 "prompt": prompt,
                 "stream": False,
-                "options": {"temperature": 0.0, "num_predict": 160},
+                "options": {"temperature": 0.1, "num_predict": 512},
             },
             timeout=OLLAMA_TIMEOUT,
         )
         if response.status_code != 200:
-            logger.error("[REASONING] Ollama HTTP %s: %s",
-                         response.status_code, response.text[:200])
+            logger.error(f"[REASONING] Ollama HTTP {response.status_code}: {response.text[:200]}")
             if LLM_GRACEFUL_FALLBACK:
                 return _FALLBACK_DECISION
             raise RuntimeError(f"Ollama HTTP {response.status_code}")
@@ -87,7 +86,7 @@ def call_llm_with_fallback(prompt: str, model_name: str = OLLAMA_MODEL) -> str:
         logger.error("[REASONING] Ollama call failed: %s", exc)
         if LLM_GRACEFUL_FALLBACK:
             return _FALLBACK_DECISION
-        raise
+        raise 
 
 
 def parse_llm_output(output: str) -> Dict[str, str]:
@@ -105,4 +104,5 @@ def parse_llm_output(output: str) -> Dict[str, str]:
             parsed["decision"] = v or parsed["decision"]
         elif "reason" in k:
             parsed["reason"] = v or parsed["reason"]
+        
     return parsed

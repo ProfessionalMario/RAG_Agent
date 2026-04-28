@@ -53,17 +53,53 @@ def _safe_to_string(decision) -> str:
         return decision.get("decision", str(decision))
     return str(decision) if decision is not None else ""
 
+def _normalize_classname(name: str) -> str:
+    """
+    Normalizes human/LLM chatter into standard Scikit-Learn PascalCase.
+    Example: 'one hot encoder' -> 'OneHotEncoder'
+    Example: 'sklearn.preprocessing.RobustScaler' -> 'RobustScaler'
+    """
+    if not name or name.lower() == "keep":
+        return name
+
+    # 1. Strip common prefixes and suffixes
+    name = re.sub(r"^(sklearn\.)?(preprocessing\.)?", "", name, flags=re.IGNORECASE)
+    name = name.replace("`", "").split('(')[0] # Remove backticks and extra info in parens
+    
+    # 2. Convert common variations to standard class names
+    mapping = {
+        "one hot encoder": "OneHotEncoder",
+        "onehotencoder": "OneHotEncoder",
+        "standard scaler": "StandardScaler",
+        "robust scaler": "RobustScaler",
+        "power transformer": "PowerTransformer",
+        "quantile transformer": "QuantileTransformer",
+        "ordinal encoder": "OrdinalEncoder",
+        "simple imputer": "SimpleImputer",
+    }
+    
+    lookup = name.lower().strip()
+    if lookup in mapping:
+        return mapping[lookup]
+        
+    # 3. If not in mapping, try to PascalCase it (remove spaces)
+    return "".join(word.capitalize() for word in name.split())
 
 def _parse_critic_output(output: str) -> str:
-    """Pull the critic's first meaningful word, ignoring Decision/Final prefixes."""
+    """Pull the critic's decision and normalize it to a clean class name."""
     if not output:
         return ""
+    
+    # Take first line and strip 'Decision:' prefixes
     first_line = output.strip().splitlines()[0].strip()
-    # Strip 'Final Decision:' or 'Decision:' prefix the LLM may emit.
-    first_line = re.sub(r"^(?:final\s+)?decision\s*:\s*",
-                        "", first_line, flags=re.IGNORECASE)
-    match = re.search(r"([A-Za-z][\w]*)", first_line)
-    return match.group(1).strip() if match else first_line
+    first_line = re.sub(r"^(?:final\s+)?decision\s*:\s*", "", first_line, flags=re.IGNORECASE)
+
+    # Match names with spaces/dots/hyphens
+    match = re.search(r"([A-Za-z][\w\s\.\-]*)", first_line)
+    raw_name = match.group(1).strip() if match else first_line
+    
+    return _normalize_classname(raw_name)
+
 
 
 def _score_and_filter_docs(docs: List[str], dtype: str) -> List[str]:
@@ -166,7 +202,7 @@ def review_decision(full_record: Dict, retrieved_docs: List[str]) -> None:
         return
 
     final_decision = _parse_critic_output(critic_raw)
-    logger.debug("[CRITIC] LLM suggested: %r", final_decision)
+    logger.info("[CRITIC] LLM suggested: %r", final_decision)
 
     # --- 5. Patch ------------------------------------------------------------
     if final_decision and final_decision.lower() != "keep" and len(final_decision) > 2:
